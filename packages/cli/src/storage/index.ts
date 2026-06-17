@@ -15,14 +15,18 @@ let smAvailable: boolean | null = null
 async function isSmAvailable(): Promise<boolean> {
   if (smAvailable !== null) return smAvailable
   try {
-    const result = await smGet(SESSION_SECRET)
-    smAvailable = result !== undefined && result !== null
-    if (!smAvailable) {
-      console.warn('⚠ Secrets Manager unavailable. Running in local-only mode.\n  (cross-machine sync disabled)')
+    await smGet(SESSION_SECRET)
+    smAvailable = true
+  } catch (err: unknown) {
+    const name = err instanceof Error ? (err as NodeJS.ErrnoException).name : ''
+    if (name === 'ResourceNotFoundException') {
+      // Secret doesn't exist yet — SM is reachable and will be created on first save.
+      smAvailable = true
+    } else {
+      smAvailable = false
+      const detail = err instanceof Error ? err.message : String(err)
+      console.warn(`⚠ Secrets Manager unavailable. Running in local-only mode.\n  (${detail})`)
     }
-  } catch {
-    smAvailable = false
-    console.warn('⚠ Secrets Manager unavailable. Running in local-only mode.\n  (cross-machine sync disabled)')
   }
   return smAvailable
 }
