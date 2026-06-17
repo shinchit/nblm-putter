@@ -94,7 +94,51 @@ export function registerDebugCommand(program: Command): void {
           r.texts.forEach(t => console.log(`    ${t}`))
         })
 
-        console.log('\nOpen the screenshot to see the current page state.')
+        // Phase 2: click "ソースを追加" and capture the resulting dialog
+        const addSourceBtn = page.locator('[aria-label="ソースを追加"]').first()
+        const addSourceExists = await addSourceBtn.count() > 0
+        if (addSourceExists) {
+          console.log('\n=== CLICKING "ソースを追加" ===')
+          await addSourceBtn.click()
+          await page.waitForTimeout(2000)
+
+          const screenshot2 = join(getConfigDir(), 'debug-screenshot-dialog.png')
+          await page.screenshot({ path: screenshot2, fullPage: true })
+          console.log(`Dialog screenshot saved: ${screenshot2}`)
+
+          const dialogButtons = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('button, [role="menuitem"], [role="option"], mat-list-item, [role="listitem"]')).map(el => ({
+              text: el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 80) ?? '',
+              ariaLabel: el.getAttribute('aria-label') ?? '',
+              role: el.getAttribute('role') ?? el.tagName,
+            }))
+          )
+          console.log('\n=== DIALOG ELEMENTS ===')
+          dialogButtons.slice(0, 40).forEach((b, i) => {
+            if (b.text || b.ariaLabel) {
+              console.log(`  [${i}] ${b.role}: text="${b.text}" aria="${b.ariaLabel}"`)
+            }
+          })
+
+          // Check for file inputs that appeared after click
+          const fileInputs2 = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('input[type="file"]')).map(el => ({
+              accept: el.getAttribute('accept') ?? '',
+              id: el.id,
+              name: el.getAttribute('name') ?? '',
+            }))
+          )
+          console.log('\n=== FILE INPUTS (after click) ===')
+          if (fileInputs2.length === 0) {
+            console.log('  (none found — need to click upload option first)')
+          } else {
+            fileInputs2.forEach((fi, i) => console.log(`  [${i}] accept="${fi.accept}" id="${fi.id}"`))
+          }
+        } else {
+          console.log('\n"ソースを追加" button not found — check screenshot.')
+        }
+
+        console.log('\nOpen the screenshots to see the page state.')
         await page.close()
       } finally {
         await closeBrowser(handle)
