@@ -35,7 +35,10 @@ export function Sync() {
   const logEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    getNotebooks().then(setNotebooks).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load notebooks'))
+    getNotebooks().then(nbs => {
+      setNotebooks(nbs)
+      if (nbs.length > 0) setNotebookId(id => id || nbs[0].id)
+    }).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load notebooks'))
     return () => clearInterval(pollRef.current)
   }, [])
 
@@ -127,7 +130,6 @@ export function Sync() {
               onChange={e => setNotebookId(e.target.value)}
               disabled={loading}
             >
-              <option value="">Select a notebook...</option>
               {notebooks.map(nb => (
                 <option key={nb.id} value={nb.id}>{nb.title}</option>
               ))}
