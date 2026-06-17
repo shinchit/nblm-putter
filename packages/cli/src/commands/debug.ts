@@ -36,6 +36,21 @@ export function registerDebugCommand(program: Command): void {
           console.log(`  [${i}] text="${b.text}" aria="${b.aria}"`)
         )
 
+        // Dismiss CDK overlays before interacting
+        const backdrop = page.locator('.cdk-overlay-backdrop-showing')
+        if (await backdrop.count() > 0) {
+          console.log('\n=== DISMISSING CDK OVERLAY ===')
+          const closeBtn = page.locator('[aria-label="バナーを閉じる"], [aria-label="閉じる"]').first()
+          if (await closeBtn.count() > 0) {
+            await closeBtn.click().catch(() => {})
+            console.log('  Clicked close button')
+          } else {
+            await page.keyboard.press('Escape')
+            console.log('  Pressed Escape')
+          }
+          await page.waitForTimeout(500)
+        }
+
         // Phase 2: listen for filechooser BEFORE clicking, then click
         console.log('\n=== CLICKING "ソースを追加" (listening for filechooser) ===')
         let fileChooserOpened = false

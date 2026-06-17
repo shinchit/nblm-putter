@@ -13,6 +13,33 @@ export interface RegisterResult {
   reason?: string
 }
 
+// Dismiss Angular CDK overlays (banners, welcome dialogs) that block clicks.
+// NotebookLM sometimes shows banners on first load that cover the UI.
+async function dismissOverlays(page: Page): Promise<void> {
+  const backdrop = page.locator('.cdk-overlay-backdrop-showing')
+  if (await backdrop.count() === 0) return
+
+  // Try close buttons inside overlays first
+  const closeSelectors = [
+    '[aria-label="バナーを閉じる"]',
+    '[aria-label="閉じる"]',
+    '.cdk-overlay-container button[aria-label*="閉じる"]',
+    '.cdk-overlay-container button.close',
+  ]
+  for (const sel of closeSelectors) {
+    const btn = page.locator(sel).first()
+    if (await btn.count() > 0) {
+      await btn.click().catch(() => {})
+      await page.waitForTimeout(500)
+      if (await backdrop.count() === 0) return
+    }
+  }
+
+  // Fallback: Escape key
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(500)
+}
+
 export async function isSessionValid(context: BrowserContext): Promise<boolean> {
   const page = await context.newPage()
   try {
@@ -88,6 +115,9 @@ export async function registerFile(
   try {
     await page.goto(`${NOTEBOOKLM_URL}/notebook/${notebookId}`, { waitUntil: 'load', timeout: 30000 })
     await page.waitForTimeout(2000)
+
+    // Dismiss any CDK overlay (banners, welcome dialogs) that would block clicks
+    await dismissOverlays(page)
 
     const addSourceBtn = page.locator('[aria-label="ソースを追加"]')
     await addSourceBtn.waitFor({ state: 'visible', timeout: 10000 })
