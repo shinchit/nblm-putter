@@ -40,15 +40,29 @@ export function registerDebugCommand(program: Command): void {
         const backdrop = page.locator('.cdk-overlay-backdrop-showing')
         if (await backdrop.count() > 0) {
           console.log('\n=== DISMISSING CDK OVERLAY ===')
-          const closeBtn = page.locator('[aria-label="バナーを閉じる"], [aria-label="閉じる"]').first()
-          if (await closeBtn.count() > 0) {
-            await closeBtn.click().catch(() => {})
-            console.log('  Clicked close button')
-          } else {
-            await page.keyboard.press('Escape')
-            console.log('  Pressed Escape')
+          for (let attempt = 0; attempt < 3; attempt++) {
+            if (await backdrop.count() === 0) break
+            const closeBtn = page.locator('[aria-label="バナーを閉じる"], [aria-label="閉じる"]').first()
+            if (await closeBtn.count() > 0) {
+              await closeBtn.click({ force: true }).catch(() => {})
+              console.log(`  Attempt ${attempt + 1}: clicked close button`)
+            } else {
+              await page.keyboard.press('Escape')
+              console.log(`  Attempt ${attempt + 1}: pressed Escape`)
+            }
+            await backdrop.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {})
           }
-          await page.waitForTimeout(500)
+          if (await backdrop.count() > 0) {
+            console.log('  Forcing backdrop removal via JS')
+            await page.evaluate(() => {
+              document.querySelectorAll('.cdk-overlay-backdrop-showing').forEach(el => {
+                el.classList.remove('cdk-overlay-backdrop-showing')
+                ;(el as HTMLElement).style.pointerEvents = 'none'
+              })
+            })
+            await page.waitForTimeout(300)
+          }
+          console.log(`  Backdrop now: ${await backdrop.count() > 0 ? 'STILL PRESENT' : 'gone'}`)
         }
 
         // Phase 2: listen for filechooser BEFORE clicking, then click

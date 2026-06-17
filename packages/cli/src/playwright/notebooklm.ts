@@ -17,27 +17,32 @@ export interface RegisterResult {
 // NotebookLM sometimes shows banners on first load that cover the UI.
 async function dismissOverlays(page: Page): Promise<void> {
   const backdrop = page.locator('.cdk-overlay-backdrop-showing')
-  if (await backdrop.count() === 0) return
 
-  // Try close buttons inside overlays first
-  const closeSelectors = [
-    '[aria-label="バナーを閉じる"]',
-    '[aria-label="閉じる"]',
-    '.cdk-overlay-container button[aria-label*="閉じる"]',
-    '.cdk-overlay-container button.close',
-  ]
-  for (const sel of closeSelectors) {
-    const btn = page.locator(sel).first()
-    if (await btn.count() > 0) {
-      await btn.click().catch(() => {})
-      await page.waitForTimeout(500)
-      if (await backdrop.count() === 0) return
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (await backdrop.count() === 0) return
+
+    // Try close buttons (force:true bypasses the backdrop z-index check)
+    const closeBtn = page.locator('[aria-label="バナーを閉じる"], [aria-label="閉じる"]').first()
+    if (await closeBtn.count() > 0) {
+      await closeBtn.click({ force: true }).catch(() => {})
+    } else {
+      await page.keyboard.press('Escape')
     }
+
+    // Wait for the backdrop to actually disappear (not just 500ms)
+    await backdrop.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {})
   }
 
-  // Fallback: Escape key
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(500)
+  // Last resort: forcibly remove the backdrop via JavaScript
+  if (await backdrop.count() > 0) {
+    await page.evaluate(() => {
+      document.querySelectorAll('.cdk-overlay-backdrop-showing').forEach(el => {
+        el.classList.remove('cdk-overlay-backdrop-showing')
+        ;(el as HTMLElement).style.pointerEvents = 'none'
+      })
+    })
+    await page.waitForTimeout(300)
+  }
 }
 
 export async function isSessionValid(context: BrowserContext): Promise<boolean> {
