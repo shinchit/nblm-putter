@@ -121,48 +121,30 @@ export async function registerFile(
     await page.goto(`${NOTEBOOKLM_URL}/notebook/${notebookId}`, { waitUntil: 'load', timeout: 30000 })
     await page.waitForTimeout(2000)
 
-    // Dismiss any CDK overlay (banners, welcome dialogs) that would block clicks
-    await dismissOverlays(page)
-
-    const addSourceBtn = page.locator('[aria-label="ソースを追加"]')
-    await addSourceBtn.waitFor({ state: 'visible', timeout: 10000 })
-
-    // Listen for filechooser BEFORE clicking — some NotebookLM versions open
-    // the OS file dialog directly; others show an intermediate dialog first.
-    const chooserPromise = page.waitForEvent('filechooser', { timeout: 5000 }).catch(() => null)
-    await addSourceBtn.click()
-    const directChooser = await chooserPromise
-
-    if (directChooser) {
-      // File chooser opened directly from "ソースを追加" click
-      await directChooser.setFiles(filePath)
-    } else {
-      // A dialog appeared — find and click the upload/PDF option
-      await page.waitForTimeout(1000)
-      const uploadOption = page.locator([
-        'button:has-text("PDF")',
-        '[role="menuitem"]:has-text("PDF")',
-        'mat-list-item:has-text("PDF")',
-        'button:has-text("ファイルをアップロード")',
-        'button:has-text("アップロード")',
-        '[role="menuitem"]:has-text("アップロード")',
-        '[role="option"]:has-text("アップロード")',
-        'li:has-text("アップロード")',
-      ].join(', ')).first()
-
-      const [dialogChooser] = await Promise.all([
-        page.waitForEvent('filechooser', { timeout: 10000 }),
-        uploadOption.click({ timeout: 8000 }),
-      ])
-      await dialogChooser.setFiles(filePath)
+    // NotebookLM shows an "add source" dialog automatically on empty notebooks.
+    // For notebooks with existing sources the dialog is closed — open it explicitly.
+    const uploadBtn = page.locator('button:has-text("ファイルをアップロード")')
+    if (await uploadBtn.count() === 0) {
+      const addSourceBtn = page.locator('[aria-label="ソースを追加"]')
+      await addSourceBtn.waitFor({ state: 'visible', timeout: 10000 })
+      await addSourceBtn.click()
+      await uploadBtn.waitFor({ state: 'visible', timeout: 10000 })
     }
 
-    // Wait for upload to complete (progress indicators disappear)
-    await page.waitForFunction(
-      () => document.querySelectorAll('mat-progress-bar, [class*="progress"], [class*="uploading"]').length === 0,
-      { timeout: 60000 }
-    )
-    await page.waitForTimeout(1000)
+    // "ファイルをアップロード" triggers a native file chooser
+    const [fileChooser] = await Promise.all([
+      page.waitForEvent('filechooser', { timeout: 15000 }),
+      uploadBtn.first().click(),
+    ])
+    await fileChooser.setFiles(filePath)
+
+    // Wait until the source card appears (upload complete)
+    await page.waitForSelector('div.source-item, [class*="source-card"], [class*="source-item"]', {
+      timeout: 60000,
+    }).catch(() => {
+      // Selector may not match — fall back to time-based wait
+    })
+    await page.waitForTimeout(3000)
 
     onProgress?.(filePath)
     return { file: filePath, success: true }
