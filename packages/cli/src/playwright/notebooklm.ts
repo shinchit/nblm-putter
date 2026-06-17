@@ -124,19 +124,51 @@ export async function loginWithGoogle(page: Page): Promise<void> {
 export async function createNotebook(context: BrowserContext): Promise<Notebook> {
   const page = await context.newPage()
   try {
-    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load', timeout: 30000 })
+    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle', timeout: 30000 })
     if (page.url().includes('accounts.google.com')) {
       throw new Error('Session expired. Run `nblm-putter auth` to re-authenticate.')
     }
-    // Click "New notebook" button (label varies by language)
-    await page.locator([
+    await page.waitForTimeout(1500)
+
+    // Try progressively broader selectors — NotebookLM label varies by locale and version
+    const CANDIDATE_SELECTORS = [
       'button:has-text("新しいノートブック")',
       'button:has-text("New notebook")',
+      'button:has-text("新規ノートブック")',
+      'button:has-text("ノートブックを作成")',
       '[aria-label="新しいノートブック"]',
       '[aria-label="New notebook"]',
-    ].join(', ')).first().click({ timeout: 10000 })
+      '[aria-label*="notebook" i]',
+      '[aria-label*="ノートブック"]',
+      'mat-fab-button',
+      'button.mat-fab',
+      'a:has-text("新しいノートブック")',
+      'a:has-text("New notebook")',
+    ]
+    let clicked = false
+    for (const sel of CANDIDATE_SELECTORS) {
+      const el = page.locator(sel).first()
+      if (await el.count() > 0) {
+        await el.click({ timeout: 5000 })
+        clicked = true
+        break
+      }
+    }
 
-    // If a creation dialog appears, confirm with default title
+    if (!clicked) {
+      const found = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('button, a[role="button"], mat-fab-button')).map(b => ({
+          text: b.textContent?.trim().slice(0, 60),
+          aria: b.getAttribute('aria-label'),
+          cls: b.className.slice(0, 60),
+        }))
+      )
+      throw new Error(
+        `Could not find "New notebook" button. Buttons on page:\n${JSON.stringify(found.slice(0, 15), null, 2)}`
+      )
+    }
+
+    // If a dialog appears, confirm with default title
     const dialog = page.locator('mat-dialog-container, [role="dialog"]')
     if (await dialog.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false)) {
       await page.locator('button:has-text("作成"), button:has-text("Create")').click({ timeout: 5000 })
