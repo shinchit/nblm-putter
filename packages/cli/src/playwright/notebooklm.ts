@@ -121,6 +121,11 @@ export async function loginWithGoogle(page: Page): Promise<void> {
   }
 }
 
+function extractNotebookIdFromUrl(url: string): string {
+  const m = url.match(/\/notebook\/([^/?#]+)/) ?? url.match(/notebooklm\.google\.com\/([^/?#]+)/)
+  return m?.[1] ?? ''
+}
+
 export async function createNotebook(context: BrowserContext): Promise<Notebook> {
   const page = await context.newPage()
   try {
@@ -169,36 +174,61 @@ export async function createNotebook(context: BrowserContext): Promise<Notebook>
       )
     }
 
-    // If a confirmation dialog appears, confirm it
-    const dialog = page.locator('mat-dialog-container, [role="dialog"]')
-    const hasDialog = await dialog.waitFor({ state: 'visible', timeout: 4000 }).then(() => true).catch(() => false)
-    if (hasDialog) {
-      // Try explicit Create/作成 button first, then any submit button, then Enter
-      const confirmBtn = page.locator([
-        'button:has-text("作成")',
-        'button:has-text("Create")',
-        'button[type="submit"]',
-        'mat-dialog-container button:last-of-type',
-      ].join(', ')).first()
-      if (await confirmBtn.count() > 0) {
-        await confirmBtn.click({ timeout: 5000 })
-      } else {
-        await page.keyboard.press('Enter')
-      }
+    // Wait briefly to let dialog / direct navigation settle
+    await page.waitForTimeout(2000)
+
+    // Helper: check whether we've left the home page
+    const navigated = () => page.url() !== startUrl
+
+    if (navigated()) {
+      const id = extractNotebookIdFromUrl(page.url())
+      if (id) return { id, title: '新しいノートブック' }
     }
 
-    // Wait for URL to leave the home page — works regardless of exact URL structure
-    await page.waitForURL(url => url.toString() !== startUrl, { timeout: 30000 })
-    await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {})
+    // Log dialog state for diagnostics
+    const dialogInfo = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[role="dialog"], mat-dialog-container')).map(el => ({
+        visible: (el as HTMLElement).offsetParent !== null,
+        text: el.textContent?.trim().slice(0, 120),
+        buttons: Array.from(el.querySelectorAll('button')).map(b => b.textContent?.trim()),
+      }))
+    )
+    console.log('[createNotebook] state after click — url:', page.url(), 'dialogs:', JSON.stringify(dialogInfo))
 
-    const finalUrl = page.url()
-    // Extract notebook ID: .../notebook/<id> or .../notebooklm.google.com/<id>
-    const idMatch = finalUrl.match(/\/notebook\/([^/?#]+)/) ?? finalUrl.match(/notebooklm\.google\.com\/([^/?#]+)/)
-    const notebookId = idMatch?.[1] ?? ''
-    if (!notebookId) {
-      throw new Error(`Created notebook but could not extract ID from URL: ${finalUrl}`)
+    // Attempt 1: press Enter (confirms most form dialogs)
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(1500)
+    if (navigated()) {
+      const id = extractNotebookIdFromUrl(page.url())
+      if (id) return { id, title: '新しいノートブック' }
     }
-    return { id: notebookId, title: '新しいノートブック' }
+
+    // Attempt 2: JS-click the first non-cancel button inside any dialog
+    await page.evaluate(() => {
+      const CANCEL_LABELS = ['キャンセル', 'Cancel', '閉じる', 'Close']
+      const btn = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button, mat-dialog-container button')
+      ).find(b => {
+        const t = b.textContent?.trim() ?? ''
+        return t.length > 0 && !CANCEL_LABELS.includes(t)
+      })
+      btn?.click()
+    })
+    await page.waitForTimeout(1500)
+    if (navigated()) {
+      const id = extractNotebookIdFromUrl(page.url())
+      if (id) return { id, title: '新しいノートブック' }
+    }
+
+    // Last resort: save screenshot and throw with full context
+    const screenshotPath = '/tmp/nblm-create-notebook-debug.png'
+    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {})
+    throw new Error(
+      `createNotebook: page did not navigate after button click.\n` +
+      `Current URL: ${page.url()}\n` +
+      `Dialogs: ${JSON.stringify(dialogInfo)}\n` +
+      `Screenshot: ${screenshotPath}`
+    )
   } finally {
     await page.close()
   }
