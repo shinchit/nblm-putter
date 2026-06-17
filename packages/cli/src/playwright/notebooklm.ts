@@ -100,13 +100,19 @@ export async function loginWithGoogle(page: Page): Promise<void> {
 export async function listNotebooks(context: BrowserContext): Promise<Notebook[]> {
   const page = await context.newPage()
   try {
-    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load' })
+    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load', timeout: 30000 })
+
+    // Check authentication in the same navigation — avoids a second page open.
+    if (page.url().includes('accounts.google.com')) {
+      throw new Error('Session expired or missing. Run `nblm-putter auth` to re-authenticate.')
+    }
+
     try {
       await page.waitForSelector('[data-testid="notebook-card"], .notebook-card, mat-card', { timeout: 10000 })
     } catch {
       return []
     }
-    return page.evaluate(() =>
+    return await page.evaluate(() =>
       Array.from(document.querySelectorAll('[data-testid="notebook-card"], .notebook-card, mat-card')).map((card, i) => {
         const link = card.querySelector('a')
         const title = card.querySelector('h3, h2, [class*="title"]')?.textContent?.trim() ?? `Notebook ${i + 1}`
