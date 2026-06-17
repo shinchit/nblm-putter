@@ -138,18 +138,14 @@ export async function createNotebook(context: BrowserContext): Promise<Notebook>
 
     // Try progressively broader selectors — NotebookLM label varies by locale and version
     const CANDIDATE_SELECTORS = [
+      'button:has-text("新規作成")',        // current Japanese UI: "+ 新規作成"
       'button:has-text("新しいノートブック")',
       'button:has-text("New notebook")',
       'button:has-text("新規ノートブック")',
       'button:has-text("ノートブックを作成")',
+      '[aria-label="新規作成"]',
       '[aria-label="新しいノートブック"]',
       '[aria-label="New notebook"]',
-      '[aria-label*="notebook" i]',
-      '[aria-label*="ノートブック"]',
-      'mat-fab-button',
-      'button.mat-fab',
-      'a:has-text("新しいノートブック")',
-      'a:has-text("New notebook")',
     ]
     let clicked = false
     for (const sel of CANDIDATE_SELECTORS) {
