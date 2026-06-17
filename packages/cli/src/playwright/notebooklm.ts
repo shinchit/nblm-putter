@@ -128,9 +128,18 @@ export async function registerFile(
     const uploadBtn = page.locator('button:has-text("ファイルをアップロード")')
     if (await uploadBtn.count() === 0) {
       const addSourceBtn = page.locator('[aria-label="ソースを追加"]')
-      await addSourceBtn.waitFor({ state: 'visible', timeout: 10000 })
+      // Wait for the button to be visible AND enabled.
+      // Angular disables the button during page initialization and while
+      // a previous upload is still in progress.
+      await page.waitForFunction(
+        () => {
+          const btn = document.querySelector('[aria-label="ソースを追加"]') as HTMLButtonElement | null
+          return btn !== null && !btn.disabled && !btn.classList.contains('mat-mdc-button-disabled')
+        },
+        { timeout: 60000 }
+      )
       await addSourceBtn.click()
-      await uploadBtn.waitFor({ state: 'visible', timeout: 10000 })
+      await uploadBtn.waitFor({ state: 'visible', timeout: 15000 })
     }
 
     // "ファイルをアップロード" triggers a native file chooser
@@ -140,13 +149,15 @@ export async function registerFile(
     ])
     await fileChooser.setFiles(filePath)
 
-    // Wait until the source card appears (upload complete)
-    await page.waitForSelector('div.source-item, [class*="source-card"], [class*="source-item"]', {
-      timeout: 60000,
-    }).catch(() => {
-      // Selector may not match — fall back to time-based wait
-    })
-    await page.waitForTimeout(3000)
+    // Wait for the upload to complete:
+    // 1. Wait for the file chooser dialog to close (upload dialog disappears)
+    // 2. Or wait for loading indicators to clear
+    // 3. Fall back to a time-based wait
+    await page.waitForFunction(
+      () => document.querySelectorAll('mat-progress-bar, [class*="uploading"]').length === 0,
+      { timeout: 90000 }
+    ).catch(() => {})
+    await page.waitForTimeout(5000)
 
     onProgress?.(filePath)
     return { file: filePath, success: true }
