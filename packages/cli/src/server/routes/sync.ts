@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { resolve } from 'path'
 import { BrowserContext } from 'playwright'
 import { launchHeadlessBrowser, createHeadlessContext } from '../../playwright/browser'
-import { isSessionValid, registerFile } from '../../playwright/notebooklm'
+import { isSessionValid, openNotebookPage, uploadFileOnPage } from '../../playwright/notebooklm'
 import { loadIgnorePatterns } from '../../storage/index'
 import { filterFiles } from '../../ignore/filter'
 import { createJob, updateJob } from '../../db/jobs'
@@ -28,7 +28,7 @@ syncRouter.post('/', async (req: Request, res: Response) => {
     return
   }
 
-  const concurrency = Math.max(1, Math.min(10, Number(rawConcurrency) || 3))
+  const concurrency = Math.max(1, Math.min(10, Number(rawConcurrency) || 1))
   const ignorePatterns = await loadIgnorePatterns()
   const files = filterFiles(walkDir(absFolder), absFolder, ignorePatterns)
   const jobId = createJob({ notebookId, totalFiles: files.length })
@@ -57,13 +57,19 @@ syncRouter.post('/', async (req: Request, res: Response) => {
       const queue = [...files]
 
       async function runWorker(ctx: BrowserContext): Promise<void> {
-        while (true) {
-          const file = queue.shift()
-          if (!file) break
-          const result = await registerFile(ctx, notebookId, file)
-          done++
-          if (!result.success) errors.push({ file: result.file, reason: result.reason ?? 'unknown' })
-          updateJob(jobId, { doneFiles: done, errors })
+        const firstFile = queue.shift()
+        if (!firstFile) return
+
+        const page = await openNotebookPage(ctx, notebookId)
+        try {
+          for (let file: string | undefined = firstFile; file; file = queue.shift()) {
+            const result = await uploadFileOnPage(page, file)
+            done++
+            if (!result.success) errors.push({ file: result.file, reason: result.reason ?? 'unknown' })
+            updateJob(jobId, { doneFiles: done, errors })
+          }
+        } finally {
+          await page.close()
         }
       }
 

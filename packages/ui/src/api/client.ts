@@ -6,7 +6,7 @@ export async function getNotebooks(): Promise<{ id: string; title: string }[]> {
   return res.json() as Promise<{ id: string; title: string }[]>
 }
 
-export async function startSync(folder: string, notebookId: string, concurrency = 3): Promise<{ jobId: string }> {
+export async function startSync(folder: string, notebookId: string, concurrency = 1): Promise<{ jobId: string }> {
   const res = await fetch(`${BASE}/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

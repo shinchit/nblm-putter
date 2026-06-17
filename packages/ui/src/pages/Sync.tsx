@@ -6,7 +6,7 @@ export function Sync() {
   const [notebooks, setNotebooks] = useState<{ id: string; title: string }[]>([])
   const [notebookId, setNotebookId] = useState('')
   const [folder, setFolder] = useState('')
-  const [concurrency, setConcurrency] = useState(3)
+  const [concurrency, setConcurrency] = useState(1)
   const [job, setJob] = useState<{ status: string; doneFiles: number; totalFiles: number; errors: { file: string; reason: string }[] } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')

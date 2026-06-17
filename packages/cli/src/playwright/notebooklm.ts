@@ -14,26 +14,21 @@ export interface RegisterResult {
 }
 
 // Dismiss Angular CDK overlays (banners, welcome dialogs) that block clicks.
-// NotebookLM sometimes shows banners on first load that cover the UI.
 async function dismissOverlays(page: Page): Promise<void> {
   const backdrop = page.locator('.cdk-overlay-backdrop-showing')
 
   for (let attempt = 0; attempt < 3; attempt++) {
     if (await backdrop.count() === 0) return
 
-    // Try close buttons (force:true bypasses the backdrop z-index check)
     const closeBtn = page.locator('[aria-label="バナーを閉じる"], [aria-label="閉じる"]').first()
     if (await closeBtn.count() > 0) {
       await closeBtn.click({ force: true }).catch(() => {})
     } else {
       await page.keyboard.press('Escape')
     }
-
-    // Wait for the backdrop to actually disappear (not just 500ms)
     await backdrop.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {})
   }
 
-  // Last resort: forcibly remove the backdrop via JavaScript
   if (await backdrop.count() > 0) {
     await page.evaluate(() => {
       document.querySelectorAll('.cdk-overlay-backdrop-showing').forEach(el => {
@@ -45,12 +40,33 @@ async function dismissOverlays(page: Page): Promise<void> {
   }
 }
 
+// Wait for "ソースを追加" to become enabled, then click it to open the dialog.
+async function openAddSourceDialog(page: Page): Promise<void> {
+  const uploadBtn = page.locator('button:has-text("ファイルをアップロード")')
+
+  // If the dialog is already open (auto-opened for empty notebooks), nothing to do.
+  if (await uploadBtn.count() > 0) return
+
+  // Wait for the button to be enabled. NotebookLM disables it during initialization
+  // and while a previous upload is processing server-side.
+  await page.waitForFunction(
+    () => {
+      const btn = document.querySelector('[aria-label="ソースを追加"]') as HTMLButtonElement | null
+      return btn !== null && !btn.disabled && !btn.classList.contains('mat-mdc-button-disabled')
+    },
+    null,
+    { timeout: 60000 }
+  )
+
+  await page.locator('[aria-label="ソースを追加"]').click()
+  await uploadBtn.waitFor({ state: 'visible', timeout: 15000 })
+}
+
 export async function isSessionValid(context: BrowserContext): Promise<boolean> {
   const page = await context.newPage()
   try {
     await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load', timeout: 30000 })
-    const url = page.url()
-    return !url.includes('accounts.google.com')
+    return !page.url().includes('accounts.google.com')
   } catch {
     return false
   } finally {
@@ -61,17 +77,12 @@ export async function isSessionValid(context: BrowserContext): Promise<boolean> 
 export async function loginWithGoogle(page: Page): Promise<void> {
   try {
     await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load' })
-
-    // Poll until NotebookLM URL is reached or an unrecoverable Google error appears
     await page.waitForURL(
       url => {
         const s = url.toString()
         if (s.startsWith(NOTEBOOKLM_URL)) return true
-        // Google's "browser not supported" or permanent rejection — surface early
         if (s.includes('accounts.google.com/v3/signin/rejected') && s.includes('rrk=46')) {
-          throw new Error(
-            'Google rejected this browser. Make sure Google Chrome is installed and try again.'
-          )
+          throw new Error('Google rejected this browser. Make sure Google Chrome is installed and try again.')
         }
         return false
       },
@@ -88,84 +99,78 @@ export async function listNotebooks(context: BrowserContext): Promise<Notebook[]
   const page = await context.newPage()
   try {
     await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load' })
-    // NOTE: Selectors need verification against actual NotebookLM DOM
     try {
       await page.waitForSelector('[data-testid="notebook-card"], .notebook-card, mat-card', { timeout: 10000 })
     } catch {
       return []
     }
-    const notebooks = await page.evaluate(() => {
-      const cards = document.querySelectorAll('[data-testid="notebook-card"], .notebook-card, mat-card')
-      return Array.from(cards).map((card, i) => {
+    return page.evaluate(() =>
+      Array.from(document.querySelectorAll('[data-testid="notebook-card"], .notebook-card, mat-card')).map((card, i) => {
         const link = card.querySelector('a')
         const title = card.querySelector('h3, h2, [class*="title"]')?.textContent?.trim() ?? `Notebook ${i + 1}`
         const href = link?.getAttribute('href') ?? ''
-        const id = href.split('/').pop() ?? String(i)
-        return { id, title }
+        return { id: href.split('/').pop() ?? String(i), title }
       })
-    })
-    return notebooks
+    )
   } finally {
     await page.close()
   }
 }
 
-export async function registerFile(
-  context: BrowserContext,
-  notebookId: string,
-  filePath: string,
-  onProgress?: (file: string) => void
-): Promise<RegisterResult> {
+// Open a long-lived page for a notebook. Reuse across multiple uploadFileOnPage calls
+// to avoid re-navigation cost (2-3s per file).
+export async function openNotebookPage(context: BrowserContext, notebookId: string): Promise<Page> {
   const page = await context.newPage()
-  // Cap every Playwright operation at 30s so a hung upload doesn't block forever
   page.setDefaultTimeout(30000)
+  await page.goto(`${NOTEBOOKLM_URL}/notebook/${notebookId}`, { waitUntil: 'load', timeout: 30000 })
+  await page.waitForTimeout(2000)
+  await dismissOverlays(page)
+  return page
+}
+
+// Upload a single file on an already-open notebook page.
+// The page stays open after this call — call page.close() when all uploads are done.
+export async function uploadFileOnPage(page: Page, filePath: string): Promise<RegisterResult> {
   try {
-    await page.goto(`${NOTEBOOKLM_URL}/notebook/${notebookId}`, { waitUntil: 'load', timeout: 30000 })
-    await page.waitForTimeout(2000)
+    await openAddSourceDialog(page)
 
-    // NotebookLM shows an "add source" dialog automatically on empty notebooks.
-    // For notebooks with existing sources the dialog is closed — open it explicitly.
     const uploadBtn = page.locator('button:has-text("ファイルをアップロード")')
-    if (await uploadBtn.count() === 0) {
-      const addSourceBtn = page.locator('[aria-label="ソースを追加"]')
-      // Wait for the button to be visible AND enabled.
-      // Angular disables the button during page initialization and while
-      // a previous upload is still in progress.
-      await page.waitForFunction(
-        () => {
-          const btn = document.querySelector('[aria-label="ソースを追加"]') as HTMLButtonElement | null
-          return btn !== null && !btn.disabled && !btn.classList.contains('mat-mdc-button-disabled')
-        },
-        null,          // arg (unused)
-        { timeout: 60000 }  // options — must be 3rd arg, not 2nd
-      )
-      await addSourceBtn.click()
-      await uploadBtn.waitFor({ state: 'visible', timeout: 15000 })
-    }
-
-    // "ファイルをアップロード" triggers a native file chooser
     const [fileChooser] = await Promise.all([
       page.waitForEvent('filechooser', { timeout: 15000 }),
       uploadBtn.first().click(),
     ])
     await fileChooser.setFiles(filePath)
 
-    // Wait for the upload to complete:
-    // 1. Wait for the file chooser dialog to close (upload dialog disappears)
-    // 2. Or wait for loading indicators to clear
-    // 3. Fall back to a time-based wait
+    // Wait for upload to complete
     await page.waitForFunction(
       () => document.querySelectorAll('mat-progress-bar, [class*="uploading"]').length === 0,
-      null,            // arg (unused)
-      { timeout: 90000 }  // options
+      null,
+      { timeout: 90000 }
     ).catch(() => {})
-    await page.waitForTimeout(5000)
+    await page.waitForTimeout(3000)
 
-    onProgress?.(filePath)
+    // Close the dialog if it's still open (ready for the next file)
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(500)
+
     return { file: filePath, success: true }
   } catch (err: unknown) {
-    const reason = err instanceof Error ? err.message : String(err)
-    return { file: filePath, success: false, reason }
+    // Try to recover: close any open dialogs before the next file
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(500)
+    return { file: filePath, success: false, reason: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+// Convenience wrapper used by the Express server route (one file at a time, no page reuse).
+export async function registerFile(
+  context: BrowserContext,
+  notebookId: string,
+  filePath: string,
+): Promise<RegisterResult> {
+  const page = await openNotebookPage(context, notebookId)
+  try {
+    return await uploadFileOnPage(page, filePath)
   } finally {
     await page.close()
   }
