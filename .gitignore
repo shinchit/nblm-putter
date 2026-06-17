@@ -3,3 +3,8 @@ dist/
 *.js.map
 .env
 .env.local
+packages/*/dist/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.DS_Store
