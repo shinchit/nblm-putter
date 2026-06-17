@@ -5,6 +5,7 @@ import { readConfig, writeConfig } from '../config'
 function prompt(question: string, defaultVal: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
   return new Promise(resolve => {
+    rl.on('error', () => { rl.close(); resolve(defaultVal) })
     rl.question(`${question} (${defaultVal}): `, answer => {
       rl.close()
       resolve(answer.trim() || defaultVal)

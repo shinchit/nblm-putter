@@ -19,15 +19,22 @@ export async function isSessionValid(context: BrowserContext): Promise<boolean> 
     await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle', timeout: 30000 })
     const url = page.url()
     return !url.includes('accounts.google.com')
+  } catch {
+    return false
   } finally {
     await page.close()
   }
 }
 
 export async function loginWithGoogle(page: Page): Promise<void> {
-  await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle' })
-  await page.waitForURL(url => url.toString().startsWith(NOTEBOOKLM_URL), { timeout: 300000 })
-  await page.waitForLoadState('networkidle')
+  try {
+    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle' })
+    await page.waitForURL(url => url.toString().startsWith(NOTEBOOKLM_URL), { timeout: 300000 })
+    await page.waitForLoadState('networkidle')
+  } catch (err) {
+    await page.close()
+    throw err
+  }
 }
 
 export async function listNotebooks(context: BrowserContext): Promise<Notebook[]> {
@@ -35,7 +42,11 @@ export async function listNotebooks(context: BrowserContext): Promise<Notebook[]
   try {
     await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle' })
     // NOTE: Selectors need verification against actual NotebookLM DOM
-    await page.waitForSelector('[data-testid="notebook-card"], .notebook-card, mat-card', { timeout: 10000 })
+    try {
+      await page.waitForSelector('[data-testid="notebook-card"], .notebook-card, mat-card', { timeout: 10000 })
+    } catch {
+      return []
+    }
     const notebooks = await page.evaluate(() => {
       const cards = document.querySelectorAll('[data-testid="notebook-card"], .notebook-card, mat-card')
       return Array.from(cards).map((card, i) => {
