@@ -2,8 +2,8 @@
   "name": "nblm-putter",
   "private": true,
   "scripts": {
-    "build": "pnpm -r build",
-    "test": "pnpm --filter cli test",
+    "build": "pnpm --filter @nblm-putter/ui build && pnpm --filter nblm-putter build",
+    "test": "pnpm --filter nblm-putter test",
     "dev:ui": "pnpm --filter ui dev"
   },
   "engines": { "node": ">=20" }
