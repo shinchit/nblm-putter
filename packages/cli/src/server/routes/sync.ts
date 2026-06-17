@@ -33,8 +33,9 @@ syncRouter.post('/', async (req: Request, res: Response) => {
   res.json({ jobId })
 
   setImmediate(async () => {
-    const handle = await launchHeadless()
+    let handle
     try {
+      handle = await launchHeadless()
       if (!await isSessionValid(handle.context)) {
         updateJob(jobId, { status: 'failed' })
         return
@@ -55,7 +56,7 @@ syncRouter.post('/', async (req: Request, res: Response) => {
       console.error(`[sync job ${jobId}] failed:`, message)
       updateJob(jobId, { status: 'failed' })
     } finally {
-      await closeBrowser(handle)
+      if (handle) await closeBrowser(handle)
     }
   })
 })

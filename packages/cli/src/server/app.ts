@@ -17,7 +17,7 @@ export function createApp(): express.Application {
   app.use('/api/session', sessionRouter)
   app.use('/api/sync', syncRouter)
 
-  const publicDir = join(__dirname, 'public')
+  const publicDir = join(__dirname, '..', 'public')
   if (existsSync(publicDir)) {
     app.use(express.static(publicDir))
     app.get('*', (_req, res) => res.sendFile(join(publicDir, 'index.html')))
