@@ -129,6 +129,7 @@ export async function createNotebook(context: BrowserContext): Promise<Notebook>
       throw new Error('Session expired. Run `nblm-putter auth` to re-authenticate.')
     }
     await page.waitForTimeout(1500)
+    const startUrl = page.url()
 
     // Try progressively broader selectors — NotebookLM label varies by locale and version
     const CANDIDATE_SELECTORS = [
@@ -168,16 +169,35 @@ export async function createNotebook(context: BrowserContext): Promise<Notebook>
       )
     }
 
-    // If a dialog appears, confirm with default title
+    // If a confirmation dialog appears, confirm it
     const dialog = page.locator('mat-dialog-container, [role="dialog"]')
-    if (await dialog.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false)) {
-      await page.locator('button:has-text("作成"), button:has-text("Create")').click({ timeout: 5000 })
-        .catch(() => page.keyboard.press('Enter'))
+    const hasDialog = await dialog.waitFor({ state: 'visible', timeout: 4000 }).then(() => true).catch(() => false)
+    if (hasDialog) {
+      // Try explicit Create/作成 button first, then any submit button, then Enter
+      const confirmBtn = page.locator([
+        'button:has-text("作成")',
+        'button:has-text("Create")',
+        'button[type="submit"]',
+        'mat-dialog-container button:last-of-type',
+      ].join(', ')).first()
+      if (await confirmBtn.count() > 0) {
+        await confirmBtn.click({ timeout: 5000 })
+      } else {
+        await page.keyboard.press('Enter')
+      }
     }
 
-    await page.waitForURL(/\/notebook\//, { timeout: 30000 })
-    const notebookId = page.url().split('/notebook/').pop()?.split(/[/?#]/)[0] ?? ''
-    if (!notebookId) throw new Error('Could not determine new notebook ID from URL')
+    // Wait for URL to leave the home page — works regardless of exact URL structure
+    await page.waitForURL(url => url.toString() !== startUrl, { timeout: 30000 })
+    await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {})
+
+    const finalUrl = page.url()
+    // Extract notebook ID: .../notebook/<id> or .../notebooklm.google.com/<id>
+    const idMatch = finalUrl.match(/\/notebook\/([^/?#]+)/) ?? finalUrl.match(/notebooklm\.google\.com\/([^/?#]+)/)
+    const notebookId = idMatch?.[1] ?? ''
+    if (!notebookId) {
+      throw new Error(`Created notebook but could not extract ID from URL: ${finalUrl}`)
+    }
     return { id: notebookId, title: '新しいノートブック' }
   } finally {
     await page.close()
