@@ -42,7 +42,7 @@ export async function saveSession(state: StorageState): Promise<void> {
 
 export async function loadSession(): Promise<StorageState | null> {
   if (await isSmAvailable()) {
-    return smGet(SESSION_SECRET) as Promise<StorageState>
+    return (await smGet(SESSION_SECRET)) as StorageState
   }
   const path = localSessionPath()
   if (!existsSync(path)) return null

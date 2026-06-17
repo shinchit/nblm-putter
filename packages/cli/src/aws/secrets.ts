@@ -16,8 +16,8 @@ export async function smPut(secretId: string, value: unknown): Promise<void> {
   const payload = JSON.stringify(value)
   try {
     await client.send(new PutSecretValueCommand({ SecretId: secretId, SecretString: payload }))
-  } catch (err: any) {
-    if (err.name === 'ResourceNotFoundException') {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'ResourceNotFoundException') {
       await client.send(new CreateSecretCommand({ Name: secretId, SecretString: payload }))
     } else {
       throw err

@@ -1,7 +1,11 @@
 import { getDb } from './client'
 
+interface SettingRow {
+  value: string
+}
+
 export function getIgnorePatterns(): string[] {
-  const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('ignorePatterns') as any
+  const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get('ignorePatterns') as SettingRow | undefined
   if (!row) return []
   return JSON.parse(row.value) as string[]
 }

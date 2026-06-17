@@ -12,6 +12,17 @@ export interface Job {
   updatedAt: string
 }
 
+interface JobRow {
+  jobId: string
+  status: string
+  notebookId: string
+  totalFiles: number
+  doneFiles: number
+  errors: string
+  createdAt: string
+  updatedAt: string
+}
+
 export function createJob(params: { notebookId: string; totalFiles: number }): string {
   const jobId = randomUUID()
   const now = new Date().toISOString()
@@ -23,7 +34,7 @@ export function createJob(params: { notebookId: string; totalFiles: number }): s
 }
 
 export function getJob(jobId: string): Job | null {
-  const row = getDb().prepare('SELECT * FROM jobs WHERE jobId = ?').get(jobId) as any
+  const row = getDb().prepare('SELECT * FROM jobs WHERE jobId = ?').get(jobId) as JobRow | undefined
   if (!row) return null
   return { ...row, errors: JSON.parse(row.errors) }
 }
@@ -40,6 +51,6 @@ export function updateJob(jobId: string, updates: Partial<Pick<Job, 'status' | '
 }
 
 export function listJobs(): Job[] {
-  const rows = getDb().prepare('SELECT * FROM jobs ORDER BY createdAt DESC, rowid DESC').all() as any[]
+  const rows = getDb().prepare('SELECT * FROM jobs ORDER BY createdAt DESC, rowid DESC').all() as JobRow[]
   return rows.map(r => ({ ...r, errors: JSON.parse(r.errors) }))
 }
