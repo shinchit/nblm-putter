@@ -5,7 +5,8 @@ import { launchHeadlessBrowser, createHeadlessContext } from '../../playwright/b
 import { isSessionValid, openNotebookPage, uploadFileOnPage, UploadPhase } from '../../playwright/notebooklm'
 import { loadIgnorePatterns } from '../../storage/index'
 import { filterFiles } from '../../ignore/filter'
-import { createJob, updateJob, JobLog } from '../../db/jobs'
+import { createJob, updateJob, isCancelled, JobLog, Job } from '../../db/jobs'
+import { saveSession } from '../../storage/index'
 import { walkDir } from '../../utils/files'
 
 export const syncRouter: IRouter = Router()
@@ -44,8 +45,15 @@ syncRouter.post('/', async (req: Request, res: Response) => {
       let done = 0
 
       const page = await openNotebookPage(ctx, notebookId)
+      // Re-save session after navigation — refreshes Google cookies and extends validity.
+      ctx.storageState().then(state => saveSession(state)).catch(() => {})
+
       try {
         for (const file of files) {
+          if (isCancelled(jobId)) {
+            updateJob(jobId, { status: 'cancelled' as Job['status'], currentFile: null })
+            break
+          }
           const name = file.split('/').pop() ?? file
           updateJob(jobId, { currentFile: `${name} — 準備中...` })
           const result = await uploadFileOnPage(page, file, (p: UploadPhase) => {

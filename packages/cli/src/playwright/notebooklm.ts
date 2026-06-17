@@ -121,6 +121,37 @@ export async function loginWithGoogle(page: Page): Promise<void> {
   }
 }
 
+export async function createNotebook(context: BrowserContext): Promise<Notebook> {
+  const page = await context.newPage()
+  try {
+    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load', timeout: 30000 })
+    if (page.url().includes('accounts.google.com')) {
+      throw new Error('Session expired. Run `nblm-putter auth` to re-authenticate.')
+    }
+    // Click "New notebook" button (label varies by language)
+    await page.locator([
+      'button:has-text("新しいノートブック")',
+      'button:has-text("New notebook")',
+      '[aria-label="新しいノートブック"]',
+      '[aria-label="New notebook"]',
+    ].join(', ')).first().click({ timeout: 10000 })
+
+    // If a creation dialog appears, confirm with default title
+    const dialog = page.locator('mat-dialog-container, [role="dialog"]')
+    if (await dialog.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false)) {
+      await page.locator('button:has-text("作成"), button:has-text("Create")').click({ timeout: 5000 })
+        .catch(() => page.keyboard.press('Enter'))
+    }
+
+    await page.waitForURL(/\/notebook\//, { timeout: 30000 })
+    const notebookId = page.url().split('/notebook/').pop()?.split(/[/?#]/)[0] ?? ''
+    if (!notebookId) throw new Error('Could not determine new notebook ID from URL')
+    return { id: notebookId, title: '新しいノートブック' }
+  } finally {
+    await page.close()
+  }
+}
+
 export async function listNotebooks(context: BrowserContext): Promise<Notebook[]> {
   const page = await context.newPage()
   try {

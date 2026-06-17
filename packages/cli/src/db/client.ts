@@ -42,6 +42,7 @@ function migrate(db: Database.Database): void {
   for (const sql of [
     `ALTER TABLE jobs ADD COLUMN currentFile TEXT`,
     `ALTER TABLE jobs ADD COLUMN logs TEXT NOT NULL DEFAULT '[]'`,
+    `ALTER TABLE jobs ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0`,
   ]) {
     try { db.exec(sql) } catch { /* column already exists */ }
   }

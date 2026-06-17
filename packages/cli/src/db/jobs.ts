@@ -10,11 +10,12 @@ export interface JobLog {
 
 export interface Job {
   jobId: string
-  status: 'pending' | 'running' | 'done' | 'failed'
+  status: 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
   notebookId: string
   totalFiles: number
   doneFiles: number
   currentFile: string | null
+  cancelled: boolean
   errors: Array<{ file: string; reason: string }>
   logs: JobLog[]
   createdAt: string
@@ -28,6 +29,7 @@ interface JobRow {
   totalFiles: number
   doneFiles: number
   currentFile: string | null
+  cancelled: number
   errors: string
   logs: string
   createdAt: string
@@ -48,9 +50,20 @@ function parseRow(row: JobRow): Job {
   return {
     ...row,
     status: row.status as Job['status'],
+    cancelled: row.cancelled === 1,
     errors: JSON.parse(row.errors ?? '[]'),
     logs: JSON.parse(row.logs ?? '[]'),
   }
+}
+
+export function cancelJob(jobId: string): void {
+  const now = new Date().toISOString()
+  getDb().prepare('UPDATE jobs SET cancelled = 1, updatedAt = ? WHERE jobId = ?').run(now, jobId)
+}
+
+export function isCancelled(jobId: string): boolean {
+  const row = getDb().prepare('SELECT cancelled FROM jobs WHERE jobId = ?').get(jobId) as { cancelled: number } | undefined
+  return row?.cancelled === 1
 }
 
 export function getJob(jobId: string): Job | null {

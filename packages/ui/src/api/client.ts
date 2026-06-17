@@ -46,6 +46,20 @@ export async function saveIgnorePatterns(patterns: string[]): Promise<void> {
   if (!res.ok) throw new Error('Failed to save patterns')
 }
 
+export async function createNotebook(): Promise<{ id: string; title: string }> {
+  const res = await fetch(`${BASE}/notebooks`, { method: 'POST' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error ?? 'Failed to create notebook')
+  }
+  return res.json() as Promise<{ id: string; title: string }>
+}
+
+export async function cancelJob(jobId: string): Promise<void> {
+  const res = await fetch(`${BASE}/jobs/${jobId}/cancel`, { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to cancel job')
+}
+
 export async function pickFolder(): Promise<string | null> {
   const res = await fetch(`${BASE}/folder/pick`)
   if (!res.ok) throw new Error('Failed to open folder picker')
