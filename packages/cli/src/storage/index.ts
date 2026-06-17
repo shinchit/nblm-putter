@@ -33,7 +33,11 @@ function localSessionPath(): string {
 
 export async function saveSession(state: StorageState): Promise<void> {
   if (await isSmAvailable()) {
-    await smPut(SESSION_SECRET, state)
+    try {
+      await smPut(SESSION_SECRET, state)
+    } catch (err) {
+      console.warn('⚠ Failed to save session to Secrets Manager:', err instanceof Error ? err.message : err)
+    }
   }
   const dir = getConfigDir()
   mkdirSync(dir, { recursive: true })
@@ -42,7 +46,11 @@ export async function saveSession(state: StorageState): Promise<void> {
 
 export async function loadSession(): Promise<StorageState | null> {
   if (await isSmAvailable()) {
-    return (await smGet(SESSION_SECRET)) as StorageState
+    try {
+      return (await smGet(SESSION_SECRET)) as StorageState
+    } catch (err) {
+      console.warn('⚠ Failed to load session from Secrets Manager:', err instanceof Error ? err.message : err)
+    }
   }
   const path = localSessionPath()
   if (!existsSync(path)) return null
