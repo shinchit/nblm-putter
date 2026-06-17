@@ -7,7 +7,12 @@ export interface BrowserHandle {
 }
 
 export async function launchHeaded(): Promise<BrowserHandle> {
-  const browser = await chromium.launch({ headless: false })
+  // Use system Chrome to avoid Google's bot detection on Playwright's bundled Chromium
+  const browser = await chromium.launch({
+    headless: false,
+    channel: 'chrome',
+    args: ['--disable-blink-features=AutomationControlled'],
+  })
   const context = await browser.newContext()
   return { browser, context }
 }

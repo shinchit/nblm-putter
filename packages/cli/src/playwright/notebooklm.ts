@@ -28,8 +28,23 @@ export async function isSessionValid(context: BrowserContext): Promise<boolean> 
 
 export async function loginWithGoogle(page: Page): Promise<void> {
   try {
-    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle' })
-    await page.waitForURL(url => url.toString().startsWith(NOTEBOOKLM_URL), { timeout: 300000 })
+    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load' })
+
+    // Poll until NotebookLM URL is reached or an unrecoverable Google error appears
+    await page.waitForURL(
+      url => {
+        const s = url.toString()
+        if (s.startsWith(NOTEBOOKLM_URL)) return true
+        // Google's "browser not supported" or permanent rejection — surface early
+        if (s.includes('accounts.google.com/v3/signin/rejected') && s.includes('rrk=46')) {
+          throw new Error(
+            'Google rejected this browser. Make sure Google Chrome is installed and try again.'
+          )
+        }
+        return false
+      },
+      { timeout: 300000 }
+    )
     await page.waitForLoadState('networkidle')
   } catch (err) {
     await page.close()
