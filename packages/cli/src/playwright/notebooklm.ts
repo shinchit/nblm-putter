@@ -86,24 +86,48 @@ export async function registerFile(
 ): Promise<RegisterResult> {
   const page = await context.newPage()
   try {
-    await page.goto(`${NOTEBOOKLM_URL}/notebook/${notebookId}`, { waitUntil: 'load' })
+    await page.goto(`${NOTEBOOKLM_URL}/notebook/${notebookId}`, { waitUntil: 'load', timeout: 30000 })
+    await page.waitForTimeout(2000)
 
-    // NOTE: Button selectors need verification against actual NotebookLM DOM
-    const addSourceButton = page.locator('button:has-text("Add source"), button:has-text("ソースを追加"), [aria-label*="Add source"]').first()
-    await addSourceButton.waitFor({ timeout: 10000 })
-    await addSourceButton.click()
+    const addSourceBtn = page.locator('[aria-label="ソースを追加"]')
+    await addSourceBtn.waitFor({ state: 'visible', timeout: 10000 })
 
-    const uploadOption = page.locator('button:has-text("Upload"), [role="menuitem"]:has-text("Upload"), button:has-text("アップロード")').first()
-    await uploadOption.waitFor({ timeout: 5000 })
-    await uploadOption.click()
+    // Listen for filechooser BEFORE clicking — some NotebookLM versions open
+    // the OS file dialog directly; others show an intermediate dialog first.
+    const chooserPromise = page.waitForEvent('filechooser', { timeout: 5000 }).catch(() => null)
+    await addSourceBtn.click()
+    const directChooser = await chooserPromise
 
-    const fileInput = page.locator('input[type="file"]')
-    await fileInput.setInputFiles(filePath)
+    if (directChooser) {
+      // File chooser opened directly from "ソースを追加" click
+      await directChooser.setFiles(filePath)
+    } else {
+      // A dialog appeared — find and click the upload/PDF option
+      await page.waitForTimeout(1000)
+      const uploadOption = page.locator([
+        'button:has-text("PDF")',
+        '[role="menuitem"]:has-text("PDF")',
+        'mat-list-item:has-text("PDF")',
+        'button:has-text("ファイルをアップロード")',
+        'button:has-text("アップロード")',
+        '[role="menuitem"]:has-text("アップロード")',
+        '[role="option"]:has-text("アップロード")',
+        'li:has-text("アップロード")',
+      ].join(', ')).first()
 
-    await page.waitForFunction(() => {
-      const loaders = document.querySelectorAll('[class*="loading"], [class*="spinner"], mat-progress-bar')
-      return loaders.length === 0
-    }, { timeout: 60000 })
+      const [dialogChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 10000 }),
+        uploadOption.click({ timeout: 8000 }),
+      ])
+      await dialogChooser.setFiles(filePath)
+    }
+
+    // Wait for upload to complete (progress indicators disappear)
+    await page.waitForFunction(
+      () => document.querySelectorAll('mat-progress-bar, [class*="progress"], [class*="uploading"]').length === 0,
+      { timeout: 60000 }
+    )
+    await page.waitForTimeout(1000)
 
     onProgress?.(filePath)
     return { file: filePath, success: true }

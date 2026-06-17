@@ -1,8 +1,7 @@
 import { Command } from 'commander'
 import { join } from 'path'
 import { getConfigDir } from '../config'
-import { launchHeadless } from '../playwright/browser'
-import { closeBrowser } from '../playwright/browser'
+import { launchHeadless, closeBrowser } from '../playwright/browser'
 
 const NOTEBOOKLM_URL = 'https://notebooklm.google.com'
 
@@ -12,135 +11,107 @@ export function registerDebugCommand(program: Command): void {
     .description('Inspect NotebookLM DOM to diagnose sync issues')
     .requiredOption('--notebook <id>', 'Notebook ID to inspect')
     .action(async (opts: { notebook: string }) => {
-      const screenshotPath = join(getConfigDir(), 'debug-screenshot.png')
       const handle = await launchHeadless()
+      const page = await handle.context.newPage()
+      page.setDefaultTimeout(10000)
 
       try {
-        const page = await handle.context.newPage()
         const url = `${NOTEBOOKLM_URL}/notebook/${opts.notebook}`
         console.log(`Navigating to ${url} ...`)
         await page.goto(url, { waitUntil: 'load', timeout: 30000 })
-        // Wait for Angular/React to render after initial load
         await page.waitForTimeout(3000)
 
-        await page.screenshot({ path: screenshotPath, fullPage: true })
-        console.log(`Screenshot saved: ${screenshotPath}`)
+        const shot1 = join(getConfigDir(), 'debug-1-initial.png')
+        await page.screenshot({ path: shot1, fullPage: true })
+        console.log(`Screenshot 1 (initial): ${shot1}`)
 
-        // Collect all buttons and their identifying attributes
-        const buttons = await page.evaluate(() => {
-          return Array.from(document.querySelectorAll('button, [role="button"]')).map(el => ({
+        const buttons = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('button, [role="button"]')).map(el => ({
+            text: el.textContent?.replace(/\s+/g, ' ').trim().slice(0, 60) ?? '',
+            aria: el.getAttribute('aria-label') ?? '',
+          })).filter(b => b.text || b.aria)
+        )
+        console.log('\n=== BUTTONS ===')
+        buttons.slice(0, 30).forEach((b, i) =>
+          console.log(`  [${i}] text="${b.text}" aria="${b.aria}"`)
+        )
+
+        // Phase 2: listen for filechooser BEFORE clicking, then click
+        console.log('\n=== CLICKING "ソースを追加" (listening for filechooser) ===')
+        let fileChooserOpened = false
+        const chooserPromise = page.waitForEvent('filechooser', { timeout: 5000 })
+          .then(fc => { fileChooserOpened = true; fc.setFiles([]); return fc })
+          .catch(() => null)
+
+        await page.locator('[aria-label="ソースを追加"]').click()
+        await chooserPromise
+
+        if (fileChooserOpened) {
+          console.log('  → File chooser opened DIRECTLY on "ソースを追加" click!')
+          console.log('    (registerFile should use waitForEvent filechooser + click)')
+        } else {
+          console.log('  → No file chooser — a dialog appeared instead')
+        }
+
+        await page.waitForTimeout(2000)
+        const shot2 = join(getConfigDir(), 'debug-2-after-click.png')
+        await page.screenshot({ path: shot2, fullPage: true })
+        console.log(`Screenshot 2 (after click): ${shot2}`)
+
+        // Capture dialog contents
+        const dialogItems = await page.evaluate(() =>
+          Array.from(document.querySelectorAll([
+            '[role="dialog"] button',
+            '[role="menu"] [role="menuitem"]',
+            'mat-bottom-sheet-container button',
+            'mat-bottom-sheet-container mat-list-item',
+            '[cdkdialog] button',
+            '.cdk-overlay-container button',
+            '.cdk-overlay-container [role="option"]',
+            '.cdk-overlay-container [role="menuitem"]',
+            '.cdk-overlay-container mat-list-item',
+          ].join(', '))).map(el => ({
             tag: el.tagName,
-            text: el.textContent?.trim().slice(0, 80) ?? '',
-            ariaLabel: el.getAttribute('aria-label') ?? '',
-            id: el.id ?? '',
-            classes: el.className?.toString().slice(0, 80) ?? '',
-            dataAttrs: Array.from(el.attributes)
-              .filter(a => a.name.startsWith('data-'))
-              .map(a => `${a.name}="${a.value}"`)
-              .join(' '),
+            text: el.textContent?.replace(/\s+/g, ' ').trim().slice(0, 80) ?? '',
+            aria: el.getAttribute('aria-label') ?? '',
           }))
-        })
+        )
+        console.log('\n=== DIALOG / OVERLAY ITEMS ===')
+        if (dialogItems.length === 0) {
+          console.log('  (none found via dialog selectors)')
+          // Fallback: show all new buttons not in initial list
+          const allButtons2 = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('button, [role="menuitem"], [role="option"], mat-list-item')).map(el => ({
+              text: el.textContent?.replace(/\s+/g, ' ').trim().slice(0, 80) ?? '',
+              aria: el.getAttribute('aria-label') ?? '',
+            })).filter(b => b.text || b.aria)
+          )
+          console.log('  All interactive elements after click:')
+          allButtons2.slice(0, 40).forEach((b, i) =>
+            console.log(`    [${i}] text="${b.text}" aria="${b.aria}"`)
+          )
+        } else {
+          dialogItems.forEach((b, i) =>
+            console.log(`  [${i}] ${b.tag}: text="${b.text}" aria="${b.aria}"`)
+          )
+        }
 
-        // Collect all input[type=file]
         const fileInputs = await page.evaluate(() =>
           Array.from(document.querySelectorAll('input[type="file"]')).map(el => ({
             accept: el.getAttribute('accept') ?? '',
-            name: el.getAttribute('name') ?? '',
-            id: el.id ?? '',
+            id: el.id,
           }))
         )
-
-        // Check which of our current selectors match
-        const selectorResults = await page.evaluate(() => {
-          const selectors = [
-            'button:has-text("Add source")',
-            '[aria-label*="Add source"]',
-            '[aria-label*="add source"]',
-            'button:has-text("ソースを追加")',
-            '[aria-label*="ソースを追加"]',
-          ]
-          // Use querySelectorAll for attribute-based ones; text matching needs different approach
-          const attrSelectors = [
-            '[aria-label*="Add source"]',
-            '[aria-label*="add source"]',
-            '[aria-label*="ソースを追加"]',
-            'button[aria-label]',
-          ]
-          return attrSelectors.map(s => ({
-            selector: s,
-            count: document.querySelectorAll(s).length,
-            texts: Array.from(document.querySelectorAll(s)).map(el =>
-              (el.textContent?.trim().slice(0, 60) ?? '') + ' | aria=' + (el.getAttribute('aria-label') ?? '')
-            ),
-          }))
-        })
-
-        console.log('\n=== BUTTONS ON PAGE ===')
-        buttons.slice(0, 30).forEach((b, i) => {
-          const parts = [b.text && `text="${b.text}"`, b.ariaLabel && `aria-label="${b.ariaLabel}"`, b.id && `id="${b.id}"`].filter(Boolean)
-          console.log(`  [${i}] ${b.tag} ${parts.join(', ')}`)
-        })
-
-        console.log('\n=== FILE INPUTS ===')
+        console.log('\n=== FILE INPUTS (after click) ===')
         if (fileInputs.length === 0) {
-          console.log('  (none found)')
+          console.log('  (none — need to click an option in the dialog)')
         } else {
           fileInputs.forEach((fi, i) => console.log(`  [${i}] accept="${fi.accept}" id="${fi.id}"`))
         }
-
-        console.log('\n=== SELECTOR MATCHES ===')
-        selectorResults.forEach(r => {
-          console.log(`  "${r.selector}" → ${r.count} match(es)`)
-          r.texts.forEach(t => console.log(`    ${t}`))
-        })
-
-        // Phase 2: click "ソースを追加" and capture the resulting dialog
-        const addSourceBtn = page.locator('[aria-label="ソースを追加"]').first()
-        const addSourceExists = await addSourceBtn.count() > 0
-        if (addSourceExists) {
-          console.log('\n=== CLICKING "ソースを追加" ===')
-          await addSourceBtn.click()
-          await page.waitForTimeout(2000)
-
-          const screenshot2 = join(getConfigDir(), 'debug-screenshot-dialog.png')
-          await page.screenshot({ path: screenshot2, fullPage: true })
-          console.log(`Dialog screenshot saved: ${screenshot2}`)
-
-          const dialogButtons = await page.evaluate(() =>
-            Array.from(document.querySelectorAll('button, [role="menuitem"], [role="option"], mat-list-item, [role="listitem"]')).map(el => ({
-              text: el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 80) ?? '',
-              ariaLabel: el.getAttribute('aria-label') ?? '',
-              role: el.getAttribute('role') ?? el.tagName,
-            }))
-          )
-          console.log('\n=== DIALOG ELEMENTS ===')
-          dialogButtons.slice(0, 40).forEach((b, i) => {
-            if (b.text || b.ariaLabel) {
-              console.log(`  [${i}] ${b.role}: text="${b.text}" aria="${b.ariaLabel}"`)
-            }
-          })
-
-          // Check for file inputs that appeared after click
-          const fileInputs2 = await page.evaluate(() =>
-            Array.from(document.querySelectorAll('input[type="file"]')).map(el => ({
-              accept: el.getAttribute('accept') ?? '',
-              id: el.id,
-              name: el.getAttribute('name') ?? '',
-            }))
-          )
-          console.log('\n=== FILE INPUTS (after click) ===')
-          if (fileInputs2.length === 0) {
-            console.log('  (none found — need to click upload option first)')
-          } else {
-            fileInputs2.forEach((fi, i) => console.log(`  [${i}] accept="${fi.accept}" id="${fi.id}"`))
-          }
-        } else {
-          console.log('\n"ソースを追加" button not found — check screenshot.')
-        }
-
-        console.log('\nOpen the screenshots to see the page state.')
-        await page.close()
+      } catch (err) {
+        console.error('Error:', err instanceof Error ? err.message : err)
       } finally {
+        await page.close()
         await closeBrowser(handle)
       }
     })
