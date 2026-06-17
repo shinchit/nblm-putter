@@ -1,0 +1,10 @@
+{
+  "name": "nblm-putter",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm --filter cli test",
+    "dev:ui": "pnpm --filter ui dev"
+  },
+  "engines": { "node": ">=20" }
+}
