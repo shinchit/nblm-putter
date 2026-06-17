@@ -14,7 +14,7 @@ export function Sync() {
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   useEffect(() => {
-    getNotebooks().then(setNotebooks).catch(() => setError('Failed to load notebooks. Is your session valid?'))
+    getNotebooks().then(setNotebooks).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load notebooks'))
     return () => clearInterval(pollRef.current)
   }, [])
 

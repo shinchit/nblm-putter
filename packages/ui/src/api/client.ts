@@ -2,7 +2,10 @@ const BASE = '/api'
 
 export async function getNotebooks(): Promise<{ id: string; title: string }[]> {
   const res = await fetch(`${BASE}/notebooks`)
-  if (!res.ok) throw new Error('Failed to fetch notebooks')
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error ?? 'Failed to fetch notebooks')
+  }
   return res.json() as Promise<{ id: string; title: string }[]>
 }
 

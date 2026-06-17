@@ -1,6 +1,6 @@
 import { Router, Request, Response, IRouter } from 'express'
 import { launchHeadless, closeBrowser } from '../../playwright/browser'
-import { listNotebooks } from '../../playwright/notebooklm'
+import { isSessionValid, listNotebooks } from '../../playwright/notebooklm'
 
 export const notebooksRouter: IRouter = Router()
 
@@ -8,6 +8,10 @@ notebooksRouter.get('/', async (_req: Request, res: Response) => {
   let handle
   try {
     handle = await launchHeadless()
+    if (!await isSessionValid(handle.context)) {
+      res.status(401).json({ error: 'Session expired or missing. Run `nblm-putter auth` to re-authenticate.' })
+      return
+    }
     const notebooks = await listNotebooks(handle.context)
     res.json(notebooks)
   } catch (err: unknown) {
