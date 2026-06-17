@@ -49,13 +49,15 @@ async function openAddSourceDialog(page: Page): Promise<void> {
 
   // Wait for the button to be enabled. NotebookLM disables it during initialization
   // and while a previous upload is processing server-side.
+  // NotebookLM keeps the button disabled while processing a previous upload server-side.
+  // Large files (PDF, images) can take 2-3 minutes. Wait up to 5 minutes.
   await page.waitForFunction(
     () => {
       const btn = document.querySelector('[aria-label="ソースを追加"]') as HTMLButtonElement | null
       return btn !== null && !btn.disabled && !btn.classList.contains('mat-mdc-button-disabled')
     },
     null,
-    { timeout: 60000 }
+    { timeout: 300000 }
   )
 
   await page.locator('[aria-label="ソースを追加"]').click()
@@ -141,11 +143,11 @@ export async function uploadFileOnPage(page: Page, filePath: string): Promise<Re
     ])
     await fileChooser.setFiles(filePath)
 
-    // Wait for upload to complete
+    // Wait for the upload progress indicator to disappear (large files can take several minutes).
     await page.waitForFunction(
       () => document.querySelectorAll('mat-progress-bar, [class*="uploading"]').length === 0,
       null,
-      { timeout: 90000 }
+      { timeout: 300000 }
     ).catch(() => {})
     await page.waitForTimeout(3000)
 
