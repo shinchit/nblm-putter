@@ -26,7 +26,7 @@ export async function isSessionValid(context: BrowserContext): Promise<boolean> 
 
 export async function loginWithGoogle(page: Page): Promise<void> {
   await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle' })
-  await page.waitForURL(url => url.startsWith(NOTEBOOKLM_URL), { timeout: 300000 })
+  await page.waitForURL(url => url.toString().startsWith(NOTEBOOKLM_URL), { timeout: 300000 })
   await page.waitForLoadState('networkidle')
 }
 

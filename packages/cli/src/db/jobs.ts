@@ -36,7 +36,7 @@ export function createJob(params: { notebookId: string; totalFiles: number }): s
 export function getJob(jobId: string): Job | null {
   const row = getDb().prepare('SELECT * FROM jobs WHERE jobId = ?').get(jobId) as JobRow | undefined
   if (!row) return null
-  return { ...row, errors: JSON.parse(row.errors) }
+  return { ...row, status: row.status as Job['status'], errors: JSON.parse(row.errors) }
 }
 
 export function updateJob(jobId: string, updates: Partial<Pick<Job, 'status' | 'doneFiles' | 'errors'>>): void {
@@ -52,5 +52,5 @@ export function updateJob(jobId: string, updates: Partial<Pick<Job, 'status' | '
 
 export function listJobs(): Job[] {
   const rows = getDb().prepare('SELECT * FROM jobs ORDER BY createdAt DESC, rowid DESC').all() as JobRow[]
-  return rows.map(r => ({ ...r, errors: JSON.parse(r.errors) }))
+  return rows.map(r => ({ ...r, status: r.status as Job['status'], errors: JSON.parse(r.errors) }))
 }
