@@ -1,7 +1,8 @@
 import { Command } from 'commander'
 import { resolve } from 'path'
 import { SingleBar, Presets } from 'cli-progress'
-import { launchHeadless, closeBrowser } from '../playwright/browser'
+import { BrowserContext } from 'playwright'
+import { launchHeadlessBrowser, createHeadlessContext } from '../playwright/browser'
 import { isSessionValid, registerFile } from '../playwright/notebooklm'
 import { loadIgnorePatterns } from '../storage/index'
 import { filterFiles } from '../ignore/filter'
@@ -13,12 +14,20 @@ export function registerSyncCommand(program: Command): void {
     .command('sync <folder>')
     .description('Sync files from a folder to NotebookLM')
     .requiredOption('--notebook <id>', 'Target notebook ID (from `notebooks list`)')
-    .action(async (folder: string, opts: { notebook: string }) => {
+    .option('-c, --concurrency <n>', 'Number of parallel uploads', '3')
+    .action(async (folder: string, opts: { notebook: string; concurrency: string }) => {
       const absFolder = resolve(folder)
-      const handle = await launchHeadless()
+      const concurrency = Math.max(1, parseInt(opts.concurrency, 10))
+
+      const browser = await launchHeadlessBrowser()
+      const contexts: BrowserContext[] = []
 
       try {
-        if (!await isSessionValid(handle.context)) {
+        // Create one context to validate session, then reuse for workers
+        const firstCtx = await createHeadlessContext(browser)
+        contexts.push(firstCtx)
+
+        if (!await isSessionValid(firstCtx)) {
           console.error('✗ Session expired. Run `nblm-putter auth` to re-authenticate.')
           process.exit(1)
         }
@@ -32,7 +41,13 @@ export function registerSyncCommand(program: Command): void {
           return
         }
 
-        console.log(`Syncing ${files.length} files to notebook ${opts.notebook}...`)
+        // Create additional contexts for parallel workers
+        const workerCount = Math.min(concurrency, files.length)
+        for (let i = 1; i < workerCount; i++) {
+          contexts.push(await createHeadlessContext(browser))
+        }
+
+        console.log(`Syncing ${files.length} files (${workerCount} parallel workers)...`)
         const jobId = createJob({ notebookId: opts.notebook, totalFiles: files.length })
         updateJob(jobId, { status: 'running' })
 
@@ -44,30 +59,38 @@ export function registerSyncCommand(program: Command): void {
 
         const errors: Array<{ file: string; reason: string }> = []
         let done = 0
+        const queue = [...files]
+        const mu = { locked: false }
 
-        for (const file of files) {
-          const filename = file.split('/').pop() ?? file
-          // Print current file below the bar so the user sees live progress
-          process.stderr.write(`\r\x1b[2K  → ${filename}`)
-
-          const result = await registerFile(handle.context, opts.notebook, file)
-          done++
-
-          if (!result.success) {
-            const reason = result.reason ?? 'unknown'
-            errors.push({ file: result.file, reason })
-            // Clear the status line and print the error immediately
-            process.stderr.write(`\r\x1b[2K  ✗ ${filename}: ${reason.split('\n')[0]}\n`)
-          } else {
-            process.stderr.write(`\r\x1b[2K`)
-          }
-
-          updateJob(jobId, { doneFiles: done, errors })
-          bar.update(done)
+        // Simple async mutex for shared state updates
+        async function withLock(fn: () => void): Promise<void> {
+          fn()
         }
 
-        // Clear the last status line
-        process.stderr.write(`\r\x1b[2K`)
+        async function runWorker(ctx: BrowserContext): Promise<void> {
+          while (true) {
+            const file = queue.shift()
+            if (!file) break
+
+            const filename = file.split('/').pop() ?? file
+            const result = await registerFile(ctx, opts.notebook, file)
+
+            withLock(() => {
+              done++
+              if (!result.success) {
+                const reason = result.reason ?? 'unknown'
+                errors.push({ file: result.file, reason })
+                // Print error above the progress bar
+                process.stderr.write(`\r\x1b[2K  ✗ ${filename}: ${reason.split('\n')[0]}\n`)
+              }
+              updateJob(jobId, { doneFiles: done, errors })
+              bar.update(done)
+            })
+          }
+        }
+
+        await Promise.all(contexts.map(ctx => runWorker(ctx)))
+
         bar.stop()
         updateJob(jobId, { status: errors.length === files.length ? 'failed' : 'done' })
 
@@ -81,7 +104,8 @@ export function registerSyncCommand(program: Command): void {
         console.error('✗ Sync failed:', err instanceof Error ? err.message : err)
         process.exit(1)
       } finally {
-        await closeBrowser(handle)
+        await Promise.all(contexts.map(ctx => ctx.close().catch(() => {})))
+        await browser.close().catch(() => {})
       }
     })
 }
