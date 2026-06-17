@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getNotebooks, startSync, getJob } from '../api/client'
+import { getNotebooks, startSync, getJob, pickFolder } from '../api/client'
 import { ProgressBar } from '../components/ProgressBar'
 
 export function Sync() {
@@ -9,6 +9,7 @@ export function Sync() {
   const [concurrency, setConcurrency] = useState(1)
   const [job, setJob] = useState<{ status: string; doneFiles: number; totalFiles: number; errors: { file: string; reason: string }[] } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [picking, setPicking] = useState(false)
   const [error, setError] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
@@ -16,6 +17,18 @@ export function Sync() {
     getNotebooks().then(setNotebooks).catch(() => setError('Failed to load notebooks. Is your session valid?'))
     return () => clearInterval(pollRef.current)
   }, [])
+
+  async function handlePickFolder() {
+    setPicking(true)
+    try {
+      const path = await pickFolder()
+      if (path) setFolder(path)
+    } catch {
+      // ignore
+    } finally {
+      setPicking(false)
+    }
+  }
 
   async function handleSync() {
     if (!notebookId || !folder) return
@@ -66,13 +79,23 @@ export function Sync() {
 
         <div>
           <label className="block text-sm font-medium mb-1">Folder Path</label>
-          <input
-            type="text"
-            className="w-full border rounded px-3 py-2 font-mono text-sm"
-            placeholder="/path/to/your/folder"
-            value={folder}
-            onChange={e => setFolder(e.target.value)}
-          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              className="flex-1 border rounded px-3 py-2 font-mono text-sm"
+              placeholder="/path/to/your/folder"
+              value={folder}
+              onChange={e => setFolder(e.target.value)}
+            />
+            <button
+              type="button"
+              className="px-3 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+              onClick={handlePickFolder}
+              disabled={picking || loading}
+            >
+              {picking ? '...' : 'Browse...'}
+            </button>
+          </div>
         </div>
 
         <div>

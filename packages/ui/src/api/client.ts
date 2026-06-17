@@ -43,6 +43,13 @@ export async function saveIgnorePatterns(patterns: string[]): Promise<void> {
   if (!res.ok) throw new Error('Failed to save patterns')
 }
 
+export async function pickFolder(): Promise<string | null> {
+  const res = await fetch(`${BASE}/folder/pick`)
+  if (!res.ok) throw new Error('Failed to open folder picker')
+  const data = await res.json() as { path: string | null }
+  return data.path
+}
+
 export async function uploadSession(sessionJson: unknown): Promise<void> {
   const res = await fetch(`${BASE}/session`, {
     method: 'POST',
