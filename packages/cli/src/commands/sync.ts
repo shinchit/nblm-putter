@@ -37,33 +37,48 @@ export function registerSyncCommand(program: Command): void {
         updateJob(jobId, { status: 'running' })
 
         const bar = new SingleBar(
-          { format: '{bar} {percentage}% | {value}/{total} | {filename}' },
+          { format: '{bar} {percentage}% | {value}/{total} | ETA: {eta}s' },
           Presets.shades_classic
         )
-        bar.start(files.length, 0, { filename: '' })
+        bar.start(files.length, 0)
 
         const errors: Array<{ file: string; reason: string }> = []
         let done = 0
 
         for (const file of files) {
+          const filename = file.split('/').pop() ?? file
+          // Print current file below the bar so the user sees live progress
+          process.stderr.write(`\r\x1b[2K  → ${filename}`)
+
           const result = await registerFile(handle.context, opts.notebook, file)
           done++
-          if (!result.success) errors.push({ file: result.file, reason: result.reason ?? 'unknown' })
+
+          if (!result.success) {
+            const reason = result.reason ?? 'unknown'
+            errors.push({ file: result.file, reason })
+            // Clear the status line and print the error immediately
+            process.stderr.write(`\r\x1b[2K  ✗ ${filename}: ${reason.split('\n')[0]}\n`)
+          } else {
+            process.stderr.write(`\r\x1b[2K`)
+          }
+
           updateJob(jobId, { doneFiles: done, errors })
-          bar.update(done, { filename: file.split('/').pop() ?? file })
+          bar.update(done)
         }
 
+        // Clear the last status line
+        process.stderr.write(`\r\x1b[2K`)
         bar.stop()
         updateJob(jobId, { status: errors.length === files.length ? 'failed' : 'done' })
 
         if (errors.length > 0) {
-          console.warn(`\n⚠ ${errors.length} file(s) failed:`)
-          errors.forEach(e => console.warn(`  ${e.file}: ${e.reason}`))
-        } else {
-          console.log(`\n✓ All ${files.length} files registered successfully. (Job ID: ${jobId})`)
+          console.warn(`\n⚠ ${errors.length} / ${files.length} file(s) failed:`)
+          errors.forEach(e => console.warn(`  ${e.file.split('/').pop()}: ${e.reason.split('\n')[0]}`))
         }
+        console.log(`\n✓ Done. ${done - errors.length} succeeded, ${errors.length} failed. (Job ID: ${jobId})`)
       } catch (err) {
-        console.error('✗ Sync failed:', err)
+        process.stderr.write('\r\x1b[2K')
+        console.error('✗ Sync failed:', err instanceof Error ? err.message : err)
         process.exit(1)
       } finally {
         await closeBrowser(handle)

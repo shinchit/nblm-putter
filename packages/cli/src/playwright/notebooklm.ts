@@ -117,6 +117,8 @@ export async function registerFile(
   onProgress?: (file: string) => void
 ): Promise<RegisterResult> {
   const page = await context.newPage()
+  // Cap every Playwright operation at 30s so a hung upload doesn't block forever
+  page.setDefaultTimeout(30000)
   try {
     await page.goto(`${NOTEBOOKLM_URL}/notebook/${notebookId}`, { waitUntil: 'load', timeout: 30000 })
     await page.waitForTimeout(2000)
