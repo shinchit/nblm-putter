@@ -6,6 +6,7 @@ export function Sync() {
   const [notebooks, setNotebooks] = useState<{ id: string; title: string }[]>([])
   const [notebookId, setNotebookId] = useState('')
   const [folder, setFolder] = useState('')
+  const [concurrency, setConcurrency] = useState(3)
   const [job, setJob] = useState<{ status: string; doneFiles: number; totalFiles: number; errors: { file: string; reason: string }[] } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -22,7 +23,7 @@ export function Sync() {
     setLoading(true)
     setJob(null)
     try {
-      const { jobId } = await startSync(folder, notebookId)
+      const { jobId } = await startSync(folder, notebookId, concurrency)
       pollRef.current = setInterval(async () => {
         try {
           const j = await getJob(jobId)
@@ -71,6 +72,21 @@ export function Sync() {
             placeholder="/path/to/your/folder"
             value={folder}
             onChange={e => setFolder(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Concurrency
+            <span className="ml-2 font-normal text-gray-500 text-xs">同時アップロード数（1〜10）</span>
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            className="w-24 border rounded px-3 py-2 text-sm"
+            value={concurrency}
+            onChange={e => setConcurrency(Math.max(1, Math.min(10, Number(e.target.value))))}
           />
         </div>
 
