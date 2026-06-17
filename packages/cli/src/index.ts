@@ -6,6 +6,7 @@ import { registerNotebooksCommand } from './commands/notebooks'
 import { registerIgnoreCommand } from './commands/ignore'
 import { registerSyncCommand } from './commands/sync'
 import { registerUiCommand } from './commands/ui'
+import { registerDebugCommand } from './commands/debug'
 
 const program = new Command()
 
@@ -20,5 +21,6 @@ registerNotebooksCommand(program)
 registerIgnoreCommand(program)
 registerSyncCommand(program)
 registerUiCommand(program)
+registerDebugCommand(program)
 
 program.parse()
