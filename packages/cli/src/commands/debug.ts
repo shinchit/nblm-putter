@@ -19,7 +19,9 @@ export function registerDebugCommand(program: Command): void {
         const page = await handle.context.newPage()
         const url = `${NOTEBOOKLM_URL}/notebook/${opts.notebook}`
         console.log(`Navigating to ${url} ...`)
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 })
+        await page.goto(url, { waitUntil: 'load', timeout: 30000 })
+        // Wait for Angular/React to render after initial load
+        await page.waitForTimeout(3000)
 
         await page.screenshot({ path: screenshotPath, fullPage: true })
         console.log(`Screenshot saved: ${screenshotPath}`)

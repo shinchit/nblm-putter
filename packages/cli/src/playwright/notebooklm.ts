@@ -16,7 +16,7 @@ export interface RegisterResult {
 export async function isSessionValid(context: BrowserContext): Promise<boolean> {
   const page = await context.newPage()
   try {
-    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle', timeout: 30000 })
+    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load', timeout: 30000 })
     const url = page.url()
     return !url.includes('accounts.google.com')
   } catch {
@@ -45,7 +45,7 @@ export async function loginWithGoogle(page: Page): Promise<void> {
       },
       { timeout: 300000 }
     )
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('load')
   } catch (err) {
     await page.close()
     throw err
@@ -55,7 +55,7 @@ export async function loginWithGoogle(page: Page): Promise<void> {
 export async function listNotebooks(context: BrowserContext): Promise<Notebook[]> {
   const page = await context.newPage()
   try {
-    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle' })
+    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load' })
     // NOTE: Selectors need verification against actual NotebookLM DOM
     try {
       await page.waitForSelector('[data-testid="notebook-card"], .notebook-card, mat-card', { timeout: 10000 })
@@ -86,7 +86,7 @@ export async function registerFile(
 ): Promise<RegisterResult> {
   const page = await context.newPage()
   try {
-    await page.goto(`${NOTEBOOKLM_URL}/notebook/${notebookId}`, { waitUntil: 'networkidle' })
+    await page.goto(`${NOTEBOOKLM_URL}/notebook/${notebookId}`, { waitUntil: 'load' })
 
     // NOTE: Button selectors need verification against actual NotebookLM DOM
     const addSourceButton = page.locator('button:has-text("Add source"), button:has-text("ソースを追加"), [aria-label*="Add source"]').first()
