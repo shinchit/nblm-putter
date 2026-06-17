@@ -40,28 +40,40 @@ async function dismissOverlays(page: Page): Promise<void> {
   }
 }
 
+const BUTTON_SELECTOR = '[aria-label="ソースを追加"]'
+
+function isAddSourceButtonEnabled(): boolean {
+  const btn = document.querySelector('[aria-label="ソースを追加"]') as HTMLButtonElement | null
+  return btn !== null && !btn.disabled && !btn.classList.contains('mat-mdc-button-disabled')
+}
+
 // Wait for "ソースを追加" to become enabled, then click it to open the dialog.
+// If the button stays disabled for 2 min, reloads the page (page load resets the disabled state).
 // Returns how many ms we waited for the button to become enabled.
-async function openAddSourceDialog(page: Page): Promise<number> {
+async function openAddSourceDialog(page: Page, notebookUrl: string): Promise<number> {
   const uploadBtn = page.locator('button:has-text("ファイルをアップロード")')
 
   // If the dialog is already open (auto-opened for empty notebooks), nothing to do.
   if (await uploadBtn.count() > 0) return 0
 
   const t0 = Date.now()
-  // NotebookLM keeps the button disabled while processing a previous upload server-side.
-  // Large files (PDF, images) can take several minutes. Wait up to 5 minutes.
-  await page.waitForFunction(
-    () => {
-      const btn = document.querySelector('[aria-label="ソースを追加"]') as HTMLButtonElement | null
-      return btn !== null && !btn.disabled && !btn.classList.contains('mat-mdc-button-disabled')
-    },
-    null,
-    { timeout: 300000 }
-  )
-  const buttonWaitMs = Date.now() - t0
 
-  await page.locator('[aria-label="ソースを追加"]').click()
+  // First attempt: wait up to 2 minutes
+  const enabled = await page.waitForFunction(isAddSourceButtonEnabled, null, { timeout: 120000 })
+    .then(() => true).catch(() => false)
+
+  if (!enabled) {
+    // Button is still disabled after 2 min — reload the page.
+    // On fresh load, NotebookLM shows the button as enabled regardless of server-side queue state.
+    await page.goto(notebookUrl, { waitUntil: 'load', timeout: 30000 })
+    await page.waitForTimeout(2000)
+    await dismissOverlays(page)
+    // Wait up to 3 more minutes after reload
+    await page.waitForFunction(isAddSourceButtonEnabled, null, { timeout: 180000 })
+  }
+
+  const buttonWaitMs = Date.now() - t0
+  await page.locator(BUTTON_SELECTOR).click()
   await uploadBtn.waitFor({ state: 'visible', timeout: 15000 })
   return buttonWaitMs
 }
@@ -153,7 +165,8 @@ export async function uploadFileOnPage(
 ): Promise<RegisterResult> {
   try {
     onPhase?.({ phase: 'waiting-button' })
-    const buttonWaitMs = await openAddSourceDialog(page)
+    const notebookUrl = page.url()
+    const buttonWaitMs = await openAddSourceDialog(page, notebookUrl)
 
     onPhase?.({ phase: 'uploading', buttonWaitMs })
     const t1 = Date.now()
