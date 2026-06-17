@@ -1,0 +1,17 @@
+import { Router, Request, Response, IRouter } from 'express'
+import { listJobs, getJob } from '../../db/jobs'
+
+export const jobsRouter: IRouter = Router()
+
+jobsRouter.get('/', (_req: Request, res: Response) => {
+  res.json(listJobs())
+})
+
+jobsRouter.get('/:id', (req: Request, res: Response) => {
+  const job = getJob(req.params.id)
+  if (!job) {
+    res.status(404).json({ error: 'Not found' })
+    return
+  }
+  res.json(job)
+})
