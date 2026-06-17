@@ -40,6 +40,6 @@ export function updateJob(jobId: string, updates: Partial<Pick<Job, 'status' | '
 }
 
 export function listJobs(): Job[] {
-  const rows = getDb().prepare('SELECT * FROM jobs ORDER BY createdAt DESC').all() as any[]
+  const rows = getDb().prepare('SELECT * FROM jobs ORDER BY createdAt DESC, rowid DESC').all() as any[]
   return rows.map(r => ({ ...r, errors: JSON.parse(r.errors) }))
 }
