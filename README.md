@@ -37,10 +37,19 @@ node node_modules/playwright/cli.js install chromium
 
 ```bash
 cd packages/cli
-npm link
+pnpm link --global
 ```
 
 リンク後は `nblm-putter --help` でどこからでも実行できる。
+
+> **Windows の場合**  
+> `pnpm link --global` 後にコマンドが見つからない場合は、pnpm のグローバル bin ディレクトリが PATH に入っていない。  
+> 以下で確認・追加する:
+> ```powershell
+> pnpm bin --global        # グローバル bin のパスを確認
+> # 表示されたパスを「システムの環境変数 → Path」に追加する
+> ```
+> 追加後にターミナルを再起動すると `nblm-putter` が使えるようになる。
 
 ---
 

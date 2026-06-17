@@ -1,6 +1,6 @@
 import { Router, Request, Response, IRouter } from 'express'
 import { existsSync } from 'fs'
-import { resolve } from 'path'
+import { resolve, basename } from 'path'
 import { launchHeadlessBrowser, createHeadlessContext } from '../../playwright/browser'
 import { isSessionValid, openNotebookPage, uploadFileOnPage, UploadPhase } from '../../playwright/notebooklm'
 import { loadIgnorePatterns } from '../../storage/index'
@@ -54,7 +54,7 @@ syncRouter.post('/', async (req: Request, res: Response) => {
             updateJob(jobId, { status: 'cancelled' as Job['status'], currentFile: null })
             break
           }
-          const name = file.split('/').pop() ?? file
+          const name = basename(file)
           updateJob(jobId, { currentFile: `${name} — 準備中...` })
           const result = await uploadFileOnPage(page, file, (p: UploadPhase) => {
             if (p.phase === 'waiting-button') {

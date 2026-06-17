@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { resolve } from 'path'
+import { resolve, basename } from 'path'
 import { SingleBar, Presets } from 'cli-progress'
 import { launchHeadlessBrowser, createHeadlessContext } from '../playwright/browser'
 import { isSessionValid, openNotebookPage, uploadFileOnPage } from '../playwright/notebooklm'
@@ -51,7 +51,7 @@ export function registerSyncCommand(program: Command): void {
         const page = await openNotebookPage(ctx, opts.notebook)
         try {
           for (const file of files) {
-            const filename = file.split('/').pop() ?? file
+            const filename = basename(file)
             process.stderr.write(`\r\x1b[2K  → ${filename}`)
 
             const result = await uploadFileOnPage(page, file)
@@ -78,7 +78,7 @@ export function registerSyncCommand(program: Command): void {
 
         if (errors.length > 0) {
           console.warn(`\n⚠ ${errors.length} / ${files.length} file(s) failed:`)
-          errors.forEach(e => console.warn(`  ${e.file.split('/').pop()}: ${e.reason.split('\n')[0]}`))
+          errors.forEach(e => console.warn(`  ${basename(e.file)}: ${e.reason.split('\n')[0]}`))
         }
         console.log(`\n✓ Done. ${done - errors.length} succeeded, ${errors.length} failed. (Job ID: ${jobId})`)
 
