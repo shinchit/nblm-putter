@@ -129,7 +129,7 @@ function extractNotebookIdFromUrl(url: string): string {
 export async function createNotebook(context: BrowserContext): Promise<Notebook> {
   const page = await context.newPage()
   try {
-    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'networkidle', timeout: 30000 })
+    await page.goto(NOTEBOOKLM_URL, { waitUntil: 'load', timeout: 30000 })
     if (page.url().includes('accounts.google.com')) {
       throw new Error('Session expired. Run `nblm-putter auth` to re-authenticate.')
     }
