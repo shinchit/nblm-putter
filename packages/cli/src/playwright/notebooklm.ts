@@ -41,16 +41,16 @@ async function dismissOverlays(page: Page): Promise<void> {
 }
 
 // Wait for "ソースを追加" to become enabled, then click it to open the dialog.
-async function openAddSourceDialog(page: Page): Promise<void> {
+// Returns how many ms we waited for the button to become enabled.
+async function openAddSourceDialog(page: Page): Promise<number> {
   const uploadBtn = page.locator('button:has-text("ファイルをアップロード")')
 
   // If the dialog is already open (auto-opened for empty notebooks), nothing to do.
-  if (await uploadBtn.count() > 0) return
+  if (await uploadBtn.count() > 0) return 0
 
-  // Wait for the button to be enabled. NotebookLM disables it during initialization
-  // and while a previous upload is processing server-side.
+  const t0 = Date.now()
   // NotebookLM keeps the button disabled while processing a previous upload server-side.
-  // Large files (PDF, images) can take 2-3 minutes. Wait up to 5 minutes.
+  // Large files (PDF, images) can take several minutes. Wait up to 5 minutes.
   await page.waitForFunction(
     () => {
       const btn = document.querySelector('[aria-label="ソースを追加"]') as HTMLButtonElement | null
@@ -59,9 +59,11 @@ async function openAddSourceDialog(page: Page): Promise<void> {
     null,
     { timeout: 300000 }
   )
+  const buttonWaitMs = Date.now() - t0
 
   await page.locator('[aria-label="ソースを追加"]').click()
   await uploadBtn.waitFor({ state: 'visible', timeout: 15000 })
+  return buttonWaitMs
 }
 
 export async function isSessionValid(context: BrowserContext): Promise<boolean> {
@@ -136,11 +138,25 @@ export async function openNotebookPage(context: BrowserContext, notebookId: stri
   return page
 }
 
+export interface UploadPhase {
+  phase: 'waiting-button' | 'uploading' | 'done'
+  buttonWaitMs?: number
+  uploadMs?: number
+}
+
 // Upload a single file on an already-open notebook page.
-// The page stays open after this call — call page.close() when all uploads are done.
-export async function uploadFileOnPage(page: Page, filePath: string): Promise<RegisterResult> {
+// onPhase: optional callback called at phase transitions for real-time status updates.
+export async function uploadFileOnPage(
+  page: Page,
+  filePath: string,
+  onPhase?: (p: UploadPhase) => void,
+): Promise<RegisterResult> {
   try {
-    await openAddSourceDialog(page)
+    onPhase?.({ phase: 'waiting-button' })
+    const buttonWaitMs = await openAddSourceDialog(page)
+
+    onPhase?.({ phase: 'uploading', buttonWaitMs })
+    const t1 = Date.now()
 
     const uploadBtn = page.locator('button:has-text("ファイルをアップロード")')
     const [fileChooser] = await Promise.all([
@@ -149,23 +165,26 @@ export async function uploadFileOnPage(page: Page, filePath: string): Promise<Re
     ])
     await fileChooser.setFiles(filePath)
 
-    // Wait for the upload progress indicator to disappear (large files can take several minutes).
+    // Wait for the upload progress indicator to disappear.
     await page.waitForFunction(
       () => document.querySelectorAll('mat-progress-bar, [class*="uploading"]').length === 0,
       null,
       { timeout: 300000 }
     ).catch(() => {})
-    await page.waitForTimeout(3000)
+    await page.waitForTimeout(2000)
 
-    // Close the dialog if it's still open (ready for the next file)
+    const uploadMs = Date.now() - t1
+    onPhase?.({ phase: 'done', buttonWaitMs, uploadMs })
+
+    // Close the dialog so the next file can start fresh
     await page.keyboard.press('Escape').catch(() => {})
-    await page.waitForTimeout(500)
+    await page.waitForTimeout(300)
 
-    return { file: filePath, success: true }
+    const timing = `[button wait ${(buttonWaitMs / 1000).toFixed(1)}s, upload ${(uploadMs / 1000).toFixed(1)}s]`
+    return { file: filePath, success: true, reason: timing }
   } catch (err: unknown) {
-    // Try to recover: close any open dialogs before the next file
     await page.keyboard.press('Escape').catch(() => {})
-    await page.waitForTimeout(500)
+    await page.waitForTimeout(300)
     return { file: filePath, success: false, reason: err instanceof Error ? err.message : String(err) }
   }
 }

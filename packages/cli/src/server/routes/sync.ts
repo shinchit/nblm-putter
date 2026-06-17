@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { resolve } from 'path'
 import { BrowserContext } from 'playwright'
 import { launchHeadlessBrowser, createHeadlessContext } from '../../playwright/browser'
-import { isSessionValid, openNotebookPage, uploadFileOnPage } from '../../playwright/notebooklm'
+import { isSessionValid, openNotebookPage, uploadFileOnPage, UploadPhase } from '../../playwright/notebooklm'
 import { loadIgnorePatterns } from '../../storage/index'
 import { filterFiles } from '../../ignore/filter'
 import { createJob, updateJob, JobLog } from '../../db/jobs'
@@ -64,8 +64,16 @@ syncRouter.post('/', async (req: Request, res: Response) => {
         const page = await openNotebookPage(ctx, notebookId)
         try {
           for (let file: string | undefined = firstFile; file; file = queue.shift()) {
-            updateJob(jobId, { currentFile: file.split('/').pop() ?? file })
-            const result = await uploadFileOnPage(page, file)
+            const name = file.split('/').pop() ?? file
+            updateJob(jobId, { currentFile: `${name} — 準備中...` })
+            const result = await uploadFileOnPage(page, file, (p: UploadPhase) => {
+              if (p.phase === 'waiting-button') {
+                updateJob(jobId, { currentFile: `${name} — ボタン有効化を待機中...` })
+              } else if (p.phase === 'uploading') {
+                const waited = p.buttonWaitMs ? ` (ボタン待ち ${(p.buttonWaitMs / 1000).toFixed(1)}s)` : ''
+                updateJob(jobId, { currentFile: `${name} — アップロード中${waited}` })
+              }
+            })
             done++
             const log: JobLog = {
               file: file.split('/').pop() ?? file,
