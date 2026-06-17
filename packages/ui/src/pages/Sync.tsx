@@ -22,7 +22,6 @@ export function Sync() {
   const [notebooks, setNotebooks] = useState<{ id: string; title: string }[]>([])
   const [notebookId, setNotebookId] = useState('')
   const [folder, setFolder] = useState('')
-  const [concurrency, setConcurrency] = useState(1)
   const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(false)
   const [picking, setPicking] = useState(false)
@@ -58,7 +57,7 @@ export function Sync() {
     setLoading(true)
     setJob(null)
     try {
-      const { jobId } = await startSync(folder, notebookId, concurrency)
+      const { jobId } = await startSync(folder, notebookId, 1)
       pollRef.current = setInterval(async () => {
         try {
           const j = await getJob(jobId)
@@ -120,21 +119,6 @@ export function Sync() {
               {picking ? '...' : 'Browse...'}
             </button>
           </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Concurrency
-            <span className="ml-2 font-normal text-gray-500 text-xs">同時アップロード数（1〜10）</span>
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            className="w-24 border rounded px-3 py-2 text-sm"
-            value={concurrency}
-            onChange={e => setConcurrency(Math.max(1, Math.min(10, Number(e.target.value))))}
-          />
         </div>
 
         <button
