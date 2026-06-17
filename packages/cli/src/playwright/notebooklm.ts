@@ -136,7 +136,8 @@ export async function registerFile(
           const btn = document.querySelector('[aria-label="ソースを追加"]') as HTMLButtonElement | null
           return btn !== null && !btn.disabled && !btn.classList.contains('mat-mdc-button-disabled')
         },
-        { timeout: 60000 }
+        null,          // arg (unused)
+        { timeout: 60000 }  // options — must be 3rd arg, not 2nd
       )
       await addSourceBtn.click()
       await uploadBtn.waitFor({ state: 'visible', timeout: 15000 })
@@ -155,7 +156,8 @@ export async function registerFile(
     // 3. Fall back to a time-based wait
     await page.waitForFunction(
       () => document.querySelectorAll('mat-progress-bar, [class*="uploading"]').length === 0,
-      { timeout: 90000 }
+      null,            // arg (unused)
+      { timeout: 90000 }  // options
     ).catch(() => {})
     await page.waitForTimeout(5000)
 
