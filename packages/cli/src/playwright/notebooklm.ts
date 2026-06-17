@@ -42,40 +42,50 @@ async function dismissOverlays(page: Page): Promise<void> {
 
 const BUTTON_SELECTOR = '[aria-label="ソースを追加"]'
 
-function isAddSourceButtonEnabled(): boolean {
-  const btn = document.querySelector('[aria-label="ソースを追加"]') as HTMLButtonElement | null
-  return btn !== null && !btn.disabled && !btn.classList.contains('mat-mdc-button-disabled')
+// Try to open the add-source dialog by clicking the button, regardless of disabled state.
+// Returns true if the "ファイルをアップロード" button appeared (dialog opened).
+async function tryClickAddSource(page: Page): Promise<boolean> {
+  const uploadBtn = page.locator('button:has-text("ファイルをアップロード")')
+  if (await uploadBtn.count() > 0) return true
+
+  // force: true bypasses Playwright's enabled check and pointer-events: none CSS.
+  // Angular Material may still block clicks on truly-disabled buttons, but it's worth trying
+  // before falling back to a longer wait.
+  await page.locator(BUTTON_SELECTOR).click({ force: true, timeout: 5000 }).catch(() => {})
+  return uploadBtn.waitFor({ state: 'visible', timeout: 4000 }).then(() => true).catch(() => false)
 }
 
-// Wait for "ソースを追加" to become enabled, then click it to open the dialog.
-// If the button stays disabled for 2 min, reloads the page (page load resets the disabled state).
-// Returns how many ms we waited for the button to become enabled.
+// Open the add-source dialog.  Strategy:
+//   1. Try force-click immediately (works when button is enabled or only CSS-disabled)
+//   2. Poll every 15s for up to 5 min, reloading the page once at the 2-min mark
+//      (page reload resets client-side disabled state set via WebSocket)
+// Returns elapsed ms waiting for the dialog to open.
 async function openAddSourceDialog(page: Page, notebookUrl: string): Promise<number> {
-  const uploadBtn = page.locator('button:has-text("ファイルをアップロード")')
-
-  // If the dialog is already open (auto-opened for empty notebooks), nothing to do.
-  if (await uploadBtn.count() > 0) return 0
-
   const t0 = Date.now()
 
-  // First attempt: wait up to 2 minutes
-  const enabled = await page.waitForFunction(isAddSourceButtonEnabled, null, { timeout: 120000 })
-    .then(() => true).catch(() => false)
+  // Fast path: dialog might already be open or button immediately clickable
+  if (await tryClickAddSource(page)) return Date.now() - t0
 
-  if (!enabled) {
-    // Button is still disabled after 2 min — reload the page.
-    // On fresh load, NotebookLM shows the button as enabled regardless of server-side queue state.
-    await page.goto(notebookUrl, { waitUntil: 'load', timeout: 30000 })
-    await page.waitForTimeout(2000)
-    await dismissOverlays(page)
-    // Wait up to 3 more minutes after reload
-    await page.waitForFunction(isAddSourceButtonEnabled, null, { timeout: 180000 })
+  let reloaded = false
+  const POLL_INTERVAL = 15000   // 15s between retries
+  const RELOAD_AFTER  = 120000  // reload once if still blocked after 2 min
+  const GIVE_UP_AFTER = 300000  // 5 min total
+
+  while (Date.now() - t0 < GIVE_UP_AFTER) {
+    await page.waitForTimeout(POLL_INTERVAL)
+
+    if (!reloaded && Date.now() - t0 >= RELOAD_AFTER) {
+      reloaded = true
+      await page.goto(notebookUrl, { waitUntil: 'load', timeout: 30000 })
+      await page.waitForTimeout(1000)
+      await dismissOverlays(page)
+      // Try immediately after reload before the WebSocket re-disables the button
+    }
+
+    if (await tryClickAddSource(page)) return Date.now() - t0
   }
 
-  const buttonWaitMs = Date.now() - t0
-  await page.locator(BUTTON_SELECTOR).click()
-  await uploadBtn.waitFor({ state: 'visible', timeout: 15000 })
-  return buttonWaitMs
+  throw new Error(`Could not open add-source dialog after ${Math.round((Date.now() - t0) / 1000)}s`)
 }
 
 export async function isSessionValid(context: BrowserContext): Promise<boolean> {
