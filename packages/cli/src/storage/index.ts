@@ -15,18 +15,13 @@ let smAvailable: boolean | null = null
 async function isSmAvailable(): Promise<boolean> {
   if (smAvailable !== null) return smAvailable
   try {
+    // smGet returns null (not throws) when secret doesn't exist yet — that still means SM is reachable.
     await smGet(SESSION_SECRET)
     smAvailable = true
   } catch (err: unknown) {
-    const name = err instanceof Error ? (err as NodeJS.ErrnoException).name : ''
-    if (name === 'ResourceNotFoundException') {
-      // Secret doesn't exist yet — SM is reachable and will be created on first save.
-      smAvailable = true
-    } else {
-      smAvailable = false
-      const detail = err instanceof Error ? err.message : String(err)
-      console.warn(`⚠ Secrets Manager unavailable. Running in local-only mode.\n  (${detail})`)
-    }
+    smAvailable = false
+    const detail = err instanceof Error ? err.message : String(err)
+    console.warn(`⚠ Secrets Manager unavailable. Running in local-only mode.\n  (${detail})`)
   }
   return smAvailable
 }
@@ -51,7 +46,9 @@ export async function saveSession(state: StorageState): Promise<void> {
 export async function loadSession(): Promise<StorageState | null> {
   if (await isSmAvailable()) {
     try {
-      return (await smGet(SESSION_SECRET)) as StorageState
+      const state = (await smGet(SESSION_SECRET)) as StorageState | null
+      if (state) return state
+      // Secret not created yet — fall through to local file
     } catch (err) {
       console.warn('⚠ Failed to load session from Secrets Manager:', err instanceof Error ? err.message : err)
     }

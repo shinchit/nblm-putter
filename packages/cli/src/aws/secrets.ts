@@ -7,8 +7,15 @@ function getClient(): SecretsManagerClient {
 }
 
 export async function smGet(secretId: string): Promise<unknown> {
-  const result = await getClient().send(new GetSecretValueCommand({ SecretId: secretId }))
-  return JSON.parse(result.SecretString ?? '{}')
+  try {
+    const result = await getClient().send(new GetSecretValueCommand({ SecretId: secretId }))
+    return JSON.parse(result.SecretString ?? '{}')
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'ResourceNotFoundException') {
+      return null
+    }
+    throw err
+  }
 }
 
 export async function smPut(secretId: string, value: unknown): Promise<void> {
