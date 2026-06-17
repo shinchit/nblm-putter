@@ -2,21 +2,43 @@ import { useState, useEffect, useRef } from 'react'
 import { getNotebooks, startSync, getJob, pickFolder } from '../api/client'
 import { ProgressBar } from '../components/ProgressBar'
 
+interface JobLog {
+  file: string
+  success: boolean
+  reason?: string
+  at: string
+}
+
+interface Job {
+  status: string
+  doneFiles: number
+  totalFiles: number
+  currentFile: string | null
+  errors: { file: string; reason: string }[]
+  logs: JobLog[]
+}
+
 export function Sync() {
   const [notebooks, setNotebooks] = useState<{ id: string; title: string }[]>([])
   const [notebookId, setNotebookId] = useState('')
   const [folder, setFolder] = useState('')
   const [concurrency, setConcurrency] = useState(1)
-  const [job, setJob] = useState<{ status: string; doneFiles: number; totalFiles: number; errors: { file: string; reason: string }[] } | null>(null)
+  const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(false)
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState('')
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const logEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     getNotebooks().then(setNotebooks).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load notebooks'))
     return () => clearInterval(pollRef.current)
   }, [])
+
+  // Auto-scroll log to bottom as new entries appear
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [job?.logs?.length, job?.currentFile])
 
   async function handlePickFolder() {
     setPicking(true)
@@ -40,7 +62,7 @@ export function Sync() {
       pollRef.current = setInterval(async () => {
         try {
           const j = await getJob(jobId)
-          setJob(j)
+          setJob(j as Job)
           if (j.status === 'done' || j.status === 'failed') {
             clearInterval(pollRef.current)
             setLoading(false)
@@ -56,11 +78,13 @@ export function Sync() {
     }
   }
 
+  const pct = job && job.totalFiles > 0 ? Math.round((job.doneFiles / job.totalFiles) * 100) : 0
+
   return (
-    <div className="max-w-xl">
+    <div className="max-w-2xl">
       <h2 className="text-2xl font-semibold mb-6">Sync Files</h2>
 
-      {error && <p className="text-red-600 mb-4">{error}</p>}
+      {error && <p className="text-red-600 mb-4 text-sm">{error}</p>}
 
       <div className="flex flex-col gap-4">
         <div>
@@ -122,23 +146,56 @@ export function Sync() {
         </button>
 
         {job && (
-          <div className="mt-4">
-            <ProgressBar value={job.doneFiles} total={job.totalFiles} />
+          <div className="mt-2 flex flex-col gap-3">
+            {/* Progress bar + counts */}
+            <div>
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>
+                  {job.status === 'done' && '✓ 完了'}
+                  {job.status === 'failed' && '✗ 失敗'}
+                  {job.status === 'running' && job.currentFile
+                    ? <>処理中: <span className="font-mono">{job.currentFile}</span></>
+                    : job.status === 'running' ? 'ブラウザを起動中...' : null}
+                </span>
+                <span>{job.doneFiles} / {job.totalFiles} ({pct}%)</span>
+              </div>
+              <ProgressBar value={job.doneFiles} total={job.totalFiles} />
+            </div>
+
+            {/* Per-file log */}
+            {(job.logs.length > 0 || job.currentFile) && (
+              <div className="border rounded bg-gray-50 text-xs font-mono max-h-64 overflow-y-auto p-2 flex flex-col gap-0.5">
+                {job.logs.map((entry, i) => (
+                  <div key={i} className={`flex gap-2 ${entry.success ? 'text-gray-700' : 'text-red-600'}`}>
+                    <span className="shrink-0">{entry.success ? '✓' : '✗'}</span>
+                    <span className="truncate flex-1">{entry.file}</span>
+                    {!entry.success && entry.reason && (
+                      <span className="text-red-400 shrink-0 truncate max-w-xs" title={entry.reason}>
+                        {entry.reason.split('\n')[0]}
+                      </span>
+                    )}
+                    <span className="text-gray-400 shrink-0">{new Date(entry.at).toLocaleTimeString()}</span>
+                  </div>
+                ))}
+                {job.currentFile && (
+                  <div className="flex gap-2 text-blue-600 animate-pulse">
+                    <span className="shrink-0">→</span>
+                    <span className="truncate">{job.currentFile}</span>
+                  </div>
+                )}
+                <div ref={logEndRef} />
+              </div>
+            )}
+
+            {/* Final summary */}
             {job.status === 'done' && (
-              <p className="text-green-600 mt-2">✓ Sync complete!</p>
+              <p className="text-green-600 text-sm">
+                ✓ 完了 — {job.doneFiles - job.errors.length} 件成功
+                {job.errors.length > 0 && `、${job.errors.length} 件失敗`}
+              </p>
             )}
-            {job.status === 'failed' && (
-              <p className="text-red-600 mt-2">✗ Sync failed. Check session.</p>
-            )}
-            {job.errors?.length > 0 && (
-              <details className="mt-2">
-                <summary className="text-yellow-600 cursor-pointer">{job.errors.length} error(s)</summary>
-                <ul className="text-sm text-gray-600 mt-1">
-                  {job.errors.map((e, i) => (
-                    <li key={i}>{e.file}: {e.reason}</li>
-                  ))}
-                </ul>
-              </details>
+            {job.status === 'failed' && job.doneFiles === 0 && (
+              <p className="text-red-600 text-sm">✗ 同期に失敗しました。セッションを確認してください。</p>
             )}
           </div>
         )}

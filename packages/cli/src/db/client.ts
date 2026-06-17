@@ -38,4 +38,11 @@ function migrate(db: Database.Database): void {
       value TEXT NOT NULL
     );
   `)
+  // Additive migrations — safe to run on existing DBs
+  for (const sql of [
+    `ALTER TABLE jobs ADD COLUMN currentFile TEXT`,
+    `ALTER TABLE jobs ADD COLUMN logs TEXT NOT NULL DEFAULT '[]'`,
+  ]) {
+    try { db.exec(sql) } catch { /* column already exists */ }
+  }
 }

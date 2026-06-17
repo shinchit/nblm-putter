@@ -6,7 +6,7 @@ import { launchHeadlessBrowser, createHeadlessContext } from '../../playwright/b
 import { isSessionValid, openNotebookPage, uploadFileOnPage } from '../../playwright/notebooklm'
 import { loadIgnorePatterns } from '../../storage/index'
 import { filterFiles } from '../../ignore/filter'
-import { createJob, updateJob } from '../../db/jobs'
+import { createJob, updateJob, JobLog } from '../../db/jobs'
 import { walkDir } from '../../utils/files'
 
 export const syncRouter: IRouter = Router()
@@ -53,6 +53,7 @@ syncRouter.post('/', async (req: Request, res: Response) => {
       }
 
       const errors: Array<{ file: string; reason: string }> = []
+      const logs: JobLog[] = []
       let done = 0
       const queue = [...files]
 
@@ -63,10 +64,18 @@ syncRouter.post('/', async (req: Request, res: Response) => {
         const page = await openNotebookPage(ctx, notebookId)
         try {
           for (let file: string | undefined = firstFile; file; file = queue.shift()) {
+            updateJob(jobId, { currentFile: file.split('/').pop() ?? file })
             const result = await uploadFileOnPage(page, file)
             done++
+            const log: JobLog = {
+              file: file.split('/').pop() ?? file,
+              success: result.success,
+              reason: result.reason,
+              at: new Date().toISOString(),
+            }
+            logs.push(log)
             if (!result.success) errors.push({ file: result.file, reason: result.reason ?? 'unknown' })
-            updateJob(jobId, { doneFiles: done, errors })
+            updateJob(jobId, { doneFiles: done, currentFile: null, errors, logs })
           }
         } finally {
           await page.close()

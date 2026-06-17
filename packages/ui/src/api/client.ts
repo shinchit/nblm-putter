@@ -19,7 +19,7 @@ export async function startSync(folder: string, notebookId: string, concurrency 
   return res.json() as Promise<{ jobId: string }>
 }
 
-export async function getJob(jobId: string): Promise<{ status: string; doneFiles: number; totalFiles: number; errors: { file: string; reason: string }[] }> {
+export async function getJob(jobId: string): Promise<{ status: string; doneFiles: number; totalFiles: number; currentFile: string | null; errors: { file: string; reason: string }[]; logs: { file: string; success: boolean; reason?: string; at: string }[] }> {
   const res = await fetch(`${BASE}/jobs/${jobId}`)
   if (!res.ok) throw new Error('Failed to get job')
   return res.json()
