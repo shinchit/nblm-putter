@@ -1,22 +1,12 @@
 import { Command } from 'commander'
-import { readdirSync } from 'fs'
-import { join, resolve } from 'path'
+import { resolve } from 'path'
 import { SingleBar, Presets } from 'cli-progress'
 import { launchHeadless, closeBrowser } from '../playwright/browser'
 import { isSessionValid, registerFile } from '../playwright/notebooklm'
 import { loadIgnorePatterns } from '../storage/index'
 import { filterFiles } from '../ignore/filter'
 import { createJob, updateJob } from '../db/jobs'
-
-function walkDir(dir: string): string[] {
-  const results: string[] = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = join(dir, entry.name)
-    if (entry.isDirectory()) results.push(...walkDir(fullPath))
-    else results.push(fullPath)
-  }
-  return results
-}
+import { walkDir } from '../utils/files'
 
 export function registerSyncCommand(program: Command): void {
   program

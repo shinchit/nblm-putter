@@ -9,12 +9,21 @@ export function registerUiCommand(program: Command): void {
     .action((opts: { port: string }) => {
       const port = parseInt(opts.port, 10)
       const app = createApp()
-      app.listen(port, () => {
+      const server = app.listen(port)
+      server.on('listening', () => {
         const url = `http://localhost:${port}`
         console.log(`✓ Web UI running at ${url}`)
         import('open').then(({ default: open }) => open(url)).catch(() => {
           console.log(`Open your browser at ${url}`)
         })
+      })
+      server.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          console.error(`✗ Port ${port} is already in use. Try --port <other-port>`)
+        } else {
+          console.error('✗ Server error:', err.message)
+        }
+        process.exit(1)
       })
     })
 }
