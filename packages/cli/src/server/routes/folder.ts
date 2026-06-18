@@ -16,6 +16,8 @@ async function pickFolderPath(): Promise<string | null> {
     // Use a hidden TopMost owner form so the dialog surfaces in front of all windows.
     // -Sta is required for Windows Forms (STA apartment mode).
     const ps = `
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $owner = New-Object System.Windows.Forms.Form
