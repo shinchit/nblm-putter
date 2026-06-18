@@ -8,11 +8,16 @@ export interface Config {
     region: string
     profile: string
   }
+  drive: {
+    clientId: string
+    clientSecret: string
+  }
 }
 
 const DEFAULT_CONFIG: Config = {
   useSecretsManager: false,
   aws: { region: 'ap-northeast-1', profile: 'default' },
+  drive: { clientId: '', clientSecret: '' },
 }
 
 export function getConfigDir(): string {
@@ -25,8 +30,14 @@ function getConfigPath(): string {
 
 export function readConfig(): Config {
   const path = getConfigPath()
-  if (!existsSync(path)) return { ...DEFAULT_CONFIG, aws: { ...DEFAULT_CONFIG.aws } }
-  return { ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(path, 'utf8')) }
+  if (!existsSync(path)) return { ...DEFAULT_CONFIG, aws: { ...DEFAULT_CONFIG.aws }, drive: { ...DEFAULT_CONFIG.drive } }
+  const saved = JSON.parse(readFileSync(path, 'utf8')) as Partial<Config>
+  return {
+    ...DEFAULT_CONFIG,
+    ...saved,
+    aws: { ...DEFAULT_CONFIG.aws, ...saved.aws },
+    drive: { ...DEFAULT_CONFIG.drive, ...saved.drive },
+  }
 }
 
 export function writeConfig(config: Config): void {

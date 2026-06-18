@@ -27,6 +27,7 @@ export function registerConfigCommand(program: Command): void {
       writeConfig({
         useSecretsManager: smInput.toLowerCase() === 'y',
         aws: { region, profile },
+        drive: current.drive,
       })
       console.log('✓ Configuration saved.')
     })
