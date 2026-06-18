@@ -13,13 +13,16 @@ async function pickFolderPath(): Promise<string | null> {
   }
 
   if (process.platform === 'win32') {
+    // -Sta is required: Windows Forms dialogs need STA apartment mode
     const ps = [
       'Add-Type -AssemblyName System.Windows.Forms',
+      '[void][System.Windows.Forms.Application]::EnableVisualStyles()',
       '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
       '$d.Description = "フォルダを選択してください"',
-      'if ($d.ShowDialog() -eq "OK") { $d.SelectedPath } else { "" }',
+      '$d.ShowNewFolderButton = $true',
+      'if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $d.SelectedPath } else { "" }',
     ].join('; ')
-    const { stdout } = await execFileAsync('powershell', ['-NoProfile', '-Command', ps])
+    const { stdout } = await execFileAsync('powershell', ['-Sta', '-NoProfile', '-Command', ps])
     return stdout.trim() || null
   }
 
