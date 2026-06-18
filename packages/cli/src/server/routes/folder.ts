@@ -13,15 +13,24 @@ async function pickFolderPath(): Promise<string | null> {
   }
 
   if (process.platform === 'win32') {
-    // -Sta is required: Windows Forms dialogs need STA apartment mode
-    const ps = [
-      'Add-Type -AssemblyName System.Windows.Forms',
-      '[void][System.Windows.Forms.Application]::EnableVisualStyles()',
-      '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
-      '$d.Description = "フォルダを選択してください"',
-      '$d.ShowNewFolderButton = $true',
-      'if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $d.SelectedPath } else { "" }',
-    ].join('; ')
+    // Use a hidden TopMost owner form so the dialog surfaces in front of all windows.
+    // -Sta is required for Windows Forms (STA apartment mode).
+    const ps = `
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.WindowState = 'Minimized'
+$owner.ShowInTaskbar = $false
+$owner.Show()
+$d = New-Object System.Windows.Forms.FolderBrowserDialog
+$d.Description = 'フォルダを選択してください'
+$d.ShowNewFolderButton = $true
+if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+  Write-Output $d.SelectedPath
+}
+$owner.Close()
+`
     const { stdout } = await execFileAsync('powershell', ['-Sta', '-NoProfile', '-Command', ps])
     return stdout.trim() || null
   }
