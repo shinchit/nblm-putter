@@ -24,10 +24,12 @@ export function registerConfigCommand(program: Command): void {
       const region = await prompt('AWS region', current.aws.region)
       const profile = await prompt('AWS profile', current.aws.profile)
       const smInput = await prompt('Use Secrets Manager for cross-machine sync? (y/n)', current.useSecretsManager ? 'y' : 'n')
+      const clientId = await prompt('Google Cloud OAuth2 Client ID (for Drive sync, Enter to skip)', current.drive.clientId)
+      const clientSecret = await prompt('Google Cloud OAuth2 Client Secret (for Drive sync, Enter to skip)', current.drive.clientSecret)
       writeConfig({
         useSecretsManager: smInput.toLowerCase() === 'y',
         aws: { region, profile },
-        drive: current.drive,
+        drive: { clientId, clientSecret },
       })
       console.log('✓ Configuration saved.')
     })
