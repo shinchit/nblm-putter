@@ -30,7 +30,7 @@ pnpm build
 `sync` コマンドはヘッドレス Chromium でファイルをアップロードするため、Playwright のブラウザが必要。
 
 ```bash
-node node_modules/playwright/cli.js install chromium
+npx playwright install chromium
 ```
 
 ### グローバルにインストール（`nblm-putter` コマンドとして使えるようにする）
@@ -239,7 +239,7 @@ nblm-putter ui                       Web UI を起動
 pnpm install
 
 # Playwright の Chromium をインストール（初回のみ）
-node node_modules/playwright/cli.js install chromium
+npx playwright install chromium
 
 # ビルド（UI → CLI の順でビルド）
 pnpm build
