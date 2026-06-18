@@ -80,7 +80,7 @@ nblm-putter auth
 - セッションが切れたら再度 `nblm-putter auth` を実行する
 - sync 実行時にセッションが自動更新され、有効期限が延長される
 
-> **注意**: Google Chrome がインストールされていないと Google のボット検出に引っかかりログインできない。
+> **注意**: `auth` コマンドはシステムの Google Chrome を使用する。Chrome がインストールされていないと Google のボット検出に引っかかりログインできない。Web UI（`nblm-putter ui`）を閲覧するブラウザは Edge・Firefox など何でもよい。
 
 ---
 
