@@ -7,6 +7,7 @@ import { notebooksRouter } from './routes/notebooks'
 import { sessionRouter } from './routes/session'
 import { syncRouter } from './routes/sync'
 import { folderRouter } from './routes/folder'
+import { driveSyncRouter } from './routes/drive-sync'
 
 export function createApp(): express.Application {
   const app = express()
@@ -17,6 +18,7 @@ export function createApp(): express.Application {
   app.use('/api/notebooks', notebooksRouter)
   app.use('/api/session', sessionRouter)
   app.use('/api/sync', syncRouter)
+  app.use('/api/drive-sync', driveSyncRouter)
   app.use('/api/folder', folderRouter)
 
   const publicDir = join(__dirname, '..', 'public')
