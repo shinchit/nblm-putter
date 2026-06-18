@@ -2,93 +2,91 @@ import { Command } from 'commander'
 import { resolve, basename } from 'path'
 import { SingleBar, Presets } from 'cli-progress'
 import { launchHeadlessBrowser, createHeadlessContext } from '../playwright/browser'
-import { isSessionValid, openNotebookPage, uploadFileOnPage } from '../playwright/notebooklm'
+import { openNotebookPage } from '../playwright/notebooklm'
+import { addSourcesFromDrive } from '../playwright/drive-picker'
 import { loadIgnorePatterns } from '../storage/index'
 import { filterFiles } from '../ignore/filter'
 import { createJob, updateJob } from '../db/jobs'
 import { walkDir } from '../utils/files'
+import { getOrCreateFolder, uploadFile } from '../drive/client'
 
 export function registerSyncCommand(program: Command): void {
   program
     .command('sync <folder>')
-    .description('Sync files from a folder to NotebookLM')
+    .description('Sync files from a folder to NotebookLM via Google Drive')
     .requiredOption('--notebook <id>', 'Target notebook ID (from `notebooks list`)')
     .action(async (folder: string, opts: { notebook: string }) => {
       const absFolder = resolve(folder)
+      const ignorePatterns = await loadIgnorePatterns()
+      const files = filterFiles(walkDir(absFolder), absFolder, ignorePatterns)
+
+      if (files.length === 0) {
+        console.log('No files to sync.')
+        return
+      }
+
+      console.log(`Phase 1: Uploading ${files.length} files to Google Drive...`)
+      const jobId = createJob({ notebookId: opts.notebook, totalFiles: files.length })
+      updateJob(jobId, { status: 'running' })
+
+      let rootFolderId: string
+      let notebookFolderId: string
+      try {
+        rootFolderId = await getOrCreateFolder(null, 'nblm-putter')
+        notebookFolderId = await getOrCreateFolder(rootFolderId, opts.notebook)
+      } catch (err) {
+        console.error('✗ Drive folder setup failed:', err instanceof Error ? err.message : err)
+        process.exit(1)
+      }
+
+      const bar = new SingleBar(
+        { format: '{bar} {percentage}% | {value}/{total} | ETA: {eta}s' },
+        Presets.shades_classic
+      )
+      bar.start(files.length, 0)
+
+      const errors: Array<{ file: string; reason: string }> = []
+      let done = 0
+
+      for (const file of files) {
+        const name = basename(file)
+        process.stderr.write(`\r\x1b[2K  → ${name}`)
+        try {
+          await uploadFile(file, notebookFolderId)
+        } catch (err) {
+          errors.push({ file, reason: err instanceof Error ? err.message : String(err) })
+        }
+        done++
+        updateJob(jobId, { doneFiles: done, errors })
+        bar.update(done)
+      }
+
+      process.stderr.write('\r\x1b[2K')
+      bar.stop()
+
+      if (errors.length > 0) {
+        console.warn(`\n⚠ ${errors.length} file(s) failed to upload to Drive:`)
+        errors.forEach(e => console.warn(`  ${basename(e.file)}: ${e.reason}`))
+      }
+
+      console.log(`\nPhase 2: Adding sources to NotebookLM via Drive picker...`)
 
       const browser = await launchHeadlessBrowser()
       try {
         const ctx = await createHeadlessContext(browser)
-
-        if (!await isSessionValid(ctx)) {
-          console.error('✗ Session expired. Run `nblm-putter auth` to re-authenticate.')
-          process.exit(1)
-        }
-
-        const ignorePatterns = await loadIgnorePatterns()
-        const files = filterFiles(walkDir(absFolder), absFolder, ignorePatterns)
-
-        if (files.length === 0) {
-          console.log('No files to sync.')
-          await ctx.close()
-          return
-        }
-
-        console.log(`Syncing ${files.length} files...`)
-
-        const jobId = createJob({ notebookId: opts.notebook, totalFiles: files.length })
-        updateJob(jobId, { status: 'running' })
-
-        const bar = new SingleBar(
-          { format: '{bar} {percentage}% | {value}/{total} | ETA: {eta}s' },
-          Presets.shades_classic
-        )
-        bar.start(files.length, 0)
-
-        const errors: Array<{ file: string; reason: string }> = []
-        let done = 0
-
         const page = await openNotebookPage(ctx, opts.notebook)
-        try {
-          for (const file of files) {
-            const filename = basename(file)
-            process.stderr.write(`\r\x1b[2K  → ${filename}`)
-
-            const result = await uploadFileOnPage(page, file)
-            done++
-
-            if (!result.success) {
-              const reason = result.reason ?? 'unknown'
-              errors.push({ file: result.file, reason })
-              process.stderr.write(`\r\x1b[2K  ✗ ${filename}: ${reason.split('\n')[0]}\n`)
-            } else {
-              process.stderr.write('\r\x1b[2K')
-            }
-
-            updateJob(jobId, { doneFiles: done, errors })
-            bar.update(done)
-          }
-        } finally {
-          await page.close()
-        }
-
-        process.stderr.write('\r\x1b[2K')
-        bar.stop()
-        updateJob(jobId, { status: errors.length === files.length ? 'failed' : 'done' })
-
-        if (errors.length > 0) {
-          console.warn(`\n⚠ ${errors.length} / ${files.length} file(s) failed:`)
-          errors.forEach(e => console.warn(`  ${basename(e.file)}: ${e.reason.split('\n')[0]}`))
-        }
-        console.log(`\n✓ Done. ${done - errors.length} succeeded, ${errors.length} failed. (Job ID: ${jobId})`)
-
+        await addSourcesFromDrive(page, opts.notebook)
+        await page.close()
         await ctx.close().catch(() => {})
       } catch (err) {
-        process.stderr.write('\r\x1b[2K')
-        console.error('✗ Sync failed:', err instanceof Error ? err.message : err)
+        console.error('✗ Drive picker failed:', err instanceof Error ? err.message : err)
+        updateJob(jobId, { status: 'failed' })
         process.exit(1)
       } finally {
         await browser.close().catch(() => {})
       }
+
+      updateJob(jobId, { status: errors.length === files.length ? 'failed' : 'done' })
+      console.log(`✓ Done. ${done - errors.length} files uploaded, added to NotebookLM. (Job ID: ${jobId})`)
     })
 }
