@@ -1,6 +1,5 @@
 import { Command } from 'commander'
 import { resolve, basename } from 'path'
-import { SingleBar, Presets } from 'cli-progress'
 import { launchHeadlessBrowser, createHeadlessContext } from '../playwright/browser'
 import { openNotebookPage } from '../playwright/notebooklm'
 import { addSourcesFromDrive } from '../playwright/drive-picker'
@@ -9,6 +8,20 @@ import { filterFiles } from '../ignore/filter'
 import { createJob, updateJob } from '../db/jobs'
 import { walkDir } from '../utils/files'
 import { getOrCreateFolder, uploadFile } from '../drive/client'
+
+const c = {
+  reset:  '\x1b[0m',
+  bold:   '\x1b[1m',
+  dim:    '\x1b[2m',
+  green:  '\x1b[32m',
+  yellow: '\x1b[33m',
+  red:    '\x1b[31m',
+  cyan:   '\x1b[36m',
+}
+
+function pad(s: string, width: number): string {
+  return s.length >= width ? s : s + ' '.repeat(width - s.length)
+}
 
 export function registerSyncCommand(program: Command): void {
   program
@@ -26,8 +39,10 @@ export function registerSyncCommand(program: Command): void {
         return
       }
 
-      console.log(`Phase 1: Uploading ${files.length} files to Google Drive...`)
-      const jobId = createJob({ notebookId: opts.notebook, totalFiles: files.length })
+      const total = files.length
+      process.stdout.write(`\n${c.bold}Phase 1${c.reset}  Uploading ${c.cyan}${total}${c.reset} file(s) to Google Drive...\n\n`)
+
+      const jobId = createJob({ notebookId: opts.notebook, totalFiles: total })
       updateJob(jobId, { status: 'running' })
 
       let rootFolderId: string
@@ -36,15 +51,9 @@ export function registerSyncCommand(program: Command): void {
         rootFolderId = await getOrCreateFolder(null, 'nblm-putter')
         notebookFolderId = await getOrCreateFolder(rootFolderId, opts.notebook)
       } catch (err) {
-        console.error('✗ Drive folder setup failed:', err instanceof Error ? err.message : err)
+        process.stdout.write(`  ${c.red}✗${c.reset}  Drive folder setup failed: ${err instanceof Error ? err.message : err}\n`)
         process.exit(1)
       }
-
-      const bar = new SingleBar(
-        { format: '{bar} {percentage}% | {value}/{total} | ETA: {eta}s' },
-        Presets.shades_classic
-      )
-      bar.start(files.length, 0)
 
       const errors: Array<{ file: string; reason: string }> = []
       const newlyUploaded: string[] = []
@@ -53,38 +62,44 @@ export function registerSyncCommand(program: Command): void {
 
       for (const file of files) {
         const name = basename(file)
-        process.stderr.write(`\r\x1b[2K  → ${name}`)
+        done++
+        const counter = `${c.dim}[${done}/${total}]${c.reset}`
         try {
           const result = await uploadFile(file, notebookFolderId, opts.forceOverwrite)
           if (result.status === 'skipped') {
             skipped++
-            process.stdout.write(`  SKIP  ${name}\n`)
+            process.stdout.write(`  ${c.yellow}SKIP${c.reset}  ${pad(name, 50)} ${counter}\n`)
           } else {
             newlyUploaded.push(name)
+            process.stdout.write(`  ${c.green}  → ${c.reset} ${pad(name, 50)} ${counter}\n`)
           }
         } catch (err) {
-          errors.push({ file, reason: err instanceof Error ? err.message : String(err) })
+          const reason = err instanceof Error ? err.message : String(err)
+          errors.push({ file, reason })
+          process.stdout.write(`  ${c.red}  ✗ ${c.reset} ${pad(name, 50)} ${counter}  ${c.dim}${reason}${c.reset}\n`)
         }
-        done++
         updateJob(jobId, { doneFiles: done, errors })
-        bar.update(done)
       }
 
-      process.stderr.write('\r\x1b[2K')
-      bar.stop()
+      process.stdout.write('\n')
 
       if (errors.length > 0) {
-        console.warn(`\n⚠ ${errors.length} file(s) failed to upload to Drive:`)
-        errors.forEach(e => console.warn(`  ${basename(e.file)}: ${e.reason}`))
+        process.stdout.write(`  ${c.yellow}⚠${c.reset}  ${errors.length} file(s) failed to upload.\n`)
       }
 
       if (newlyUploaded.length === 0) {
         updateJob(jobId, { status: 'done' })
-        console.log(`\n✓ Done. 全ファイルが既に Drive に存在するためスキップしました。(skipped: ${skipped}, Job ID: ${jobId})`)
+        process.stdout.write(
+          `${c.green}✓ Done.${c.reset}  ` +
+          `全ファイルが既に Drive に存在するためスキップしました。` +
+          `${c.dim}  skipped: ${skipped}  Job ID: ${jobId}${c.reset}\n\n`
+        )
         return
       }
 
-      console.log(`\nPhase 2: Adding ${newlyUploaded.length} new source(s) to NotebookLM via Drive picker...`)
+      process.stdout.write(
+        `\n${c.bold}Phase 2${c.reset}  Adding ${c.cyan}${newlyUploaded.length}${c.reset} new source(s) to NotebookLM via Drive picker...\n\n`
+      )
 
       const browser = await launchHeadlessBrowser()
       try {
@@ -94,14 +109,18 @@ export function registerSyncCommand(program: Command): void {
         await page.close()
         await ctx.close().catch(() => {})
       } catch (err) {
-        console.error('✗ Drive picker failed:', err instanceof Error ? err.message : err)
+        process.stdout.write(`  ${c.red}✗${c.reset}  Drive picker failed: ${err instanceof Error ? err.message : err}\n`)
         updateJob(jobId, { status: 'failed' })
         process.exit(1)
       } finally {
         await browser.close().catch(() => {})
       }
 
-      updateJob(jobId, { status: errors.length === files.length ? 'failed' : 'done' })
-      console.log(`✓ Done. ${newlyUploaded.length} file(s) uploaded and added to NotebookLM. (skipped: ${skipped}, Job ID: ${jobId})`)
+      updateJob(jobId, { status: errors.length === total ? 'failed' : 'done' })
+      process.stdout.write(
+        `${c.green}✓ Done.${c.reset}  ` +
+        `${newlyUploaded.length} file(s) uploaded and added to NotebookLM.` +
+        `${c.dim}  skipped: ${skipped}  Job ID: ${jobId}${c.reset}\n\n`
+      )
     })
 }
