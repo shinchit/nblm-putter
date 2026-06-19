@@ -272,3 +272,17 @@ pnpm build
 # UI 開発サーバー（Vite、ホットリロード対応）
 pnpm dev:ui
 ```
+
+---
+
+## 免責事項
+
+- 本ツールは非公式のサードパーティ製ソフトウェアです。Google LLC および Google NotebookLM とは一切関係がありません。
+- 本ツールは Playwright を使用してブラウザを自動操作します。NotebookLM の UI 変更により、予告なく動作しなくなる場合があります。
+- Google の利用規約（[Google Terms of Service](https://policies.google.com/terms)）および NotebookLM の利用規約に従ってご使用ください。自動化ツールの使用が利用規約に抵触する可能性があることをご了承の上、自己責任でご利用ください。
+- 本ツールの使用によって生じたいかなる損害（データ損失、アカウント停止、その他の損害）についても、作者は一切の責任を負いません。
+- Google アカウントの認証情報およびセッション情報は、ローカルマシン（または設定した AWS Secrets Manager）にのみ保存されます。作者はこれらの情報を収集・送信しません。
+
+## ライセンス
+
+[MIT License](./LICENSE) © 2026 Shinchi Takahiro
