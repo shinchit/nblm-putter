@@ -123,20 +123,44 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
   await notebookFolder.dblclick({ timeout: 5000 })
   await page.waitForTimeout(1200)
 
-  // デバッグ用スクリーンショット（フォルダ内容確認）
+  // デバッグ用スクリーンショット＆HTML ダンプ（フォルダ内容確認）
   await page.screenshot({ path: `${debugDir}/nblm-picker-folder.png`, fullPage: true }).catch(() => {})
+  const pickerHtmlAfter = await page.frames()
+    .find(f => f.url().includes('docs.google.com') || f.url().includes('drive.google.com'))
+    ?.evaluate(() => document.documentElement.outerHTML)
+    .catch(() => '') ?? ''
+  fs.writeFileSync(`${debugDir}/nblm-picker-folder.html`, pickerHtmlAfter)
 
-  // 7. 全ファイルを選択（最初の1件をクリックしてから Ctrl+A）
-  const firstItem = pickerFrame.locator('[aria-label*="選択されていません"], [role="option"], [role="gridcell"]').first()
-  await firstItem.waitFor({ state: 'visible', timeout: 10000 })
-  await firstItem.click({ timeout: 5000 })
-  await page.keyboard.press('Control+A')
-  await page.waitForTimeout(500)
+  // 7. 全ファイルを選択
+  //    aria-label に「選択されていません」が含まれるアイテムが対象
+  const fileItems = pickerFrame.locator('[aria-label*="選択されていません"]')
+  const fileCount = await fileItems.count().catch(() => 0)
+
+  if (fileCount > 0) {
+    // 最初のアイテムをクリックしてフォーカス、最後のアイテムを Shift+クリックで範囲選択
+    await fileItems.first().click({ timeout: 5000 })
+    if (fileCount > 1) {
+      await fileItems.last().click({ modifiers: ['Shift'], timeout: 5000 })
+    }
+  } else {
+    // フォールバック: フォーカスを合わせて Ctrl+A
+    await pickerFrame.locator('[role="main"], [role="grid"], [role="listbox"]').first()
+      .click({ timeout: 3000 }).catch(() => {})
+    await page.keyboard.press('Control+A')
+  }
+  await page.waitForTimeout(800)
+
+  // 選択後のスクリーンショット
+  await page.screenshot({ path: `${debugDir}/nblm-picker-selected.png`, fullPage: true }).catch(() => {})
 
   // 8. 「選択」ボタンをクリック
+  //    フォルダナビゲーション後の HTML を使って正確なセレクターを把握
   const selectBtn = pickerFrame.getByRole('button', { name: '選択' })
     .or(pickerFrame.getByRole('button', { name: 'Select' }))
     .or(pickerFrame.locator('[jsname="d1dBrd"]'))
+    .or(pickerFrame.locator('[aria-label="選択"]'))
+    .or(pickerFrame.locator('[aria-label="Select"]'))
+  await selectBtn.first().waitFor({ state: 'visible', timeout: 5000 })
   await selectBtn.first().click({ timeout: 5000 })
 
   // 9. ダイアログが閉じるのを待つ
