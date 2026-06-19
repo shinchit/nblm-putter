@@ -56,7 +56,9 @@ export async function getOrCreateFolder(parentId: string | null, name: string): 
   return folder.data.id!
 }
 
-export async function uploadFile(filePath: string, folderId: string): Promise<string> {
+export type UploadResult = { fileId: string; status: 'uploaded' | 'skipped' }
+
+export async function uploadFile(filePath: string, folderId: string): Promise<UploadResult> {
   await refreshIfNeeded()
   const driveApi = google.drive({ version: 'v3', auth: getOAuth2Client() })
   const name = basename(filePath)
@@ -65,16 +67,13 @@ export async function uploadFile(filePath: string, folderId: string): Promise<st
     fields: 'files(id)',
     pageSize: 1,
   })
-  const media = { body: createReadStream(filePath) }
   if (existing.data.files?.length) {
-    const fileId = existing.data.files[0].id!
-    await driveApi.files.update({ fileId, media })
-    return fileId
+    return { fileId: existing.data.files[0].id!, status: 'skipped' }
   }
   const res = await driveApi.files.create({
     requestBody: { name, parents: [folderId] },
-    media,
+    media: { body: createReadStream(filePath) },
     fields: 'id',
   })
-  return res.data.id!
+  return { fileId: res.data.id!, status: 'uploaded' }
 }

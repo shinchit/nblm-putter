@@ -7,7 +7,12 @@ const PICKER_FRAME_SELECTORS = [
   'iframe[src*="accounts.google.com"][src*="picker"]',
 ]
 
-export async function addSourcesFromDrive(page: Page, notebookId: string): Promise<void> {
+// filesToAdd: 新規アップロードしたファイル名のリスト。指定時はそのファイルのみ選択する。
+export async function addSourcesFromDrive(
+  page: Page,
+  notebookId: string,
+  filesToAdd?: string[],
+): Promise<void> {
   const debugDir = process.env.TMPDIR ?? '/tmp'
 
   // 1. 「ソースを追加」ボタンをクリック
@@ -131,22 +136,34 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
     .catch(() => '') ?? ''
   fs.writeFileSync(`${debugDir}/nblm-picker-folder.html`, pickerHtmlAfter)
 
-  // 7. 全ファイルを選択
-  //    aria-label に「選択されていません」が含まれるアイテムが対象
-  const fileItems = pickerFrame.locator('[aria-label*="選択されていません"]')
-  const fileCount = await fileItems.count().catch(() => 0)
-
-  if (fileCount > 0) {
-    // 最初のアイテムをクリックしてフォーカス、最後のアイテムを Shift+クリックで範囲選択
-    await fileItems.first().click({ timeout: 5000 })
-    if (fileCount > 1) {
-      await fileItems.last().click({ modifiers: ['Shift'], timeout: 5000 })
+  // 7. ファイルを選択
+  if (filesToAdd && filesToAdd.length > 0) {
+    // 新規アップロード分のみ Ctrl+クリックで個別選択
+    let firstSelected = false
+    for (const name of filesToAdd) {
+      const item = pickerFrame.locator(`[aria-label*="${name}"]`).first()
+      const visible = await item.isVisible({ timeout: 2000 }).catch(() => false)
+      if (!visible) continue
+      if (!firstSelected) {
+        await item.click({ timeout: 5000 })
+        firstSelected = true
+      } else {
+        await item.click({ modifiers: ['Control'], timeout: 5000 })
+      }
+    }
+    if (!firstSelected) {
+      throw new Error('新規アップロードファイルがピッカー内に見つかりませんでした。')
     }
   } else {
-    // フォールバック: フォーカスを合わせて Ctrl+A
-    await pickerFrame.locator('[role="main"], [role="grid"], [role="listbox"]').first()
-      .click({ timeout: 3000 }).catch(() => {})
-    await page.keyboard.press('Control+A')
+    // filesToAdd 未指定時はフォルダ内全件を Shift+クリックで選択
+    const fileItems = pickerFrame.locator('[aria-label*="選択されていません"]')
+    const fileCount = await fileItems.count().catch(() => 0)
+    if (fileCount > 0) {
+      await fileItems.first().click({ timeout: 5000 })
+      if (fileCount > 1) {
+        await fileItems.last().click({ modifiers: ['Shift'], timeout: 5000 })
+      }
+    }
   }
   await page.waitForTimeout(800)
 

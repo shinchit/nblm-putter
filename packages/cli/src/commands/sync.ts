@@ -46,13 +46,21 @@ export function registerSyncCommand(program: Command): void {
       bar.start(files.length, 0)
 
       const errors: Array<{ file: string; reason: string }> = []
+      const newlyUploaded: string[] = []
       let done = 0
+      let skipped = 0
 
       for (const file of files) {
         const name = basename(file)
         process.stderr.write(`\r\x1b[2K  → ${name}`)
         try {
-          await uploadFile(file, notebookFolderId)
+          const result = await uploadFile(file, notebookFolderId)
+          if (result.status === 'skipped') {
+            skipped++
+            process.stdout.write(`  SKIP  ${name}\n`)
+          } else {
+            newlyUploaded.push(name)
+          }
         } catch (err) {
           errors.push({ file, reason: err instanceof Error ? err.message : String(err) })
         }
@@ -69,13 +77,19 @@ export function registerSyncCommand(program: Command): void {
         errors.forEach(e => console.warn(`  ${basename(e.file)}: ${e.reason}`))
       }
 
-      console.log(`\nPhase 2: Adding sources to NotebookLM via Drive picker...`)
+      if (newlyUploaded.length === 0) {
+        updateJob(jobId, { status: 'done' })
+        console.log(`\n✓ Done. 全ファイルが既に Drive に存在するためスキップしました。(skipped: ${skipped}, Job ID: ${jobId})`)
+        return
+      }
+
+      console.log(`\nPhase 2: Adding ${newlyUploaded.length} new source(s) to NotebookLM via Drive picker...`)
 
       const browser = await launchHeadlessBrowser()
       try {
         const ctx = await createHeadlessContext(browser)
         const page = await openNotebookPage(ctx, opts.notebook)
-        await addSourcesFromDrive(page, opts.notebook)
+        await addSourcesFromDrive(page, opts.notebook, newlyUploaded)
         await page.close()
         await ctx.close().catch(() => {})
       } catch (err) {
@@ -87,6 +101,6 @@ export function registerSyncCommand(program: Command): void {
       }
 
       updateJob(jobId, { status: errors.length === files.length ? 'failed' : 'done' })
-      console.log(`✓ Done. ${done - errors.length} files uploaded, added to NotebookLM. (Job ID: ${jobId})`)
+      console.log(`✓ Done. ${newlyUploaded.length} file(s) uploaded and added to NotebookLM. (skipped: ${skipped}, Job ID: ${jobId})`)
     })
 }
