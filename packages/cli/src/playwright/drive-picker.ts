@@ -153,15 +153,15 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
   // 選択後のスクリーンショット
   await page.screenshot({ path: `${debugDir}/nblm-picker-selected.png`, fullPage: true }).catch(() => {})
 
-  // 8. 「選択」ボタンをクリック
-  //    フォルダナビゲーション後の HTML を使って正確なセレクターを把握
-  const selectBtn = pickerFrame.getByRole('button', { name: '選択' })
-    .or(pickerFrame.getByRole('button', { name: 'Select' }))
+  // 8. 「挿入」ボタンをクリック（ファイル選択後に右下に出現）
+  //    実 DOM 確認: 日本語 UI は「挿入」、英語 UI は「Insert」
+  const insertBtn = pickerFrame.getByRole('button', { name: '挿入' })
+    .or(pickerFrame.getByRole('button', { name: 'Insert' }))
     .or(pickerFrame.locator('[jsname="d1dBrd"]'))
-    .or(pickerFrame.locator('[aria-label="選択"]'))
-    .or(pickerFrame.locator('[aria-label="Select"]'))
-  await selectBtn.first().waitFor({ state: 'visible', timeout: 5000 })
-  await selectBtn.first().click({ timeout: 5000 })
+    .or(pickerFrame.locator('[aria-label="挿入"]'))
+    .or(pickerFrame.locator('[aria-label="Insert"]'))
+  await insertBtn.first().waitFor({ state: 'visible', timeout: 8000 })
+  await insertBtn.first().click({ timeout: 5000 })
 
   // 9. ダイアログが閉じるのを待つ
   await page.waitForTimeout(2000)
