@@ -98,64 +98,46 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
     .catch(() => '') ?? ''
   fs.writeFileSync(`${debugDir}/nblm-picker-frame.html`, pickerHtml)
 
-  // 4. マイドライブへ移動（ピッカーが別ビューを開いている場合）
-  const myDriveCandidates = [
-    'text=マイドライブ',
-    'text=My Drive',
-    '[data-view="2"]',
-    '[aria-label="マイドライブ"]',
-    '[aria-label="My Drive"]',
-    '[data-id="my_drive_item"]',
-    '.a-d-Dc:has-text("マイドライブ")',
-    '.a-d-Dc:has-text("My Drive")',
-    '[role="treeitem"]:has-text("マイドライブ")',
-    '[role="treeitem"]:has-text("My Drive")',
-    '[role="listitem"]:has-text("マイドライブ")',
-    '[role="listitem"]:has-text("My Drive")',
-  ]
-  for (const sel of myDriveCandidates) {
-    const el = pickerFrame.locator(sel).first()
-    const visible = await el.isVisible({ timeout: 1000 }).catch(() => false)
-    if (visible) {
-      await el.click({ timeout: 5000 })
-      await page.waitForTimeout(1000)
-      break
-    }
+  // 4. 「マイドライブ」タブをクリック
+  //    ピッカーは「最近使用したアイテム」タブで開くので明示的に切り替える
+  //    タブは role="tab"、テキスト「マイドライブ」または id="1"
+  const myDriveTab = pickerFrame.getByRole('tab', { name: 'マイドライブ' })
+    .or(pickerFrame.getByRole('tab', { name: 'My Drive' }))
+    .or(pickerFrame.locator('[role="tab"][id="1"]'))
+  const myDriveTabVisible = await myDriveTab.first().isVisible({ timeout: 3000 }).catch(() => false)
+  if (myDriveTabVisible) {
+    await myDriveTab.first().click({ timeout: 5000 })
+    await page.waitForTimeout(1500)
   }
 
   // 5. nblm-putter フォルダを開く
-  const nblmFolder = pickerFrame.locator([
-    `[data-tooltip="nblm-putter"]`,
-    `[aria-label="nblm-putter"]`,
-    `text=nblm-putter`,
-    `[title="nblm-putter"]`,
-  ].join(', ')).first()
+  //    ファイルアイテムは aria-label="<名前> <種別> 選択されていません" の形式
+  const nblmFolder = pickerFrame.locator('[aria-label*="nblm-putter"]').first()
   await nblmFolder.waitFor({ state: 'visible', timeout: 10000 })
   await nblmFolder.dblclick({ timeout: 5000 })
-  await page.waitForTimeout(1000)
+  await page.waitForTimeout(1200)
 
   // 6. ノートブックサブフォルダを開く
-  const notebookFolder = pickerFrame.locator([
-    `[data-tooltip="${notebookId}"]`,
-    `[aria-label="${notebookId}"]`,
-    `text=${notebookId}`,
-    `[title="${notebookId}"]`,
-  ].join(', ')).first()
+  const notebookFolder = pickerFrame.locator(`[aria-label*="${notebookId}"]`).first()
   await notebookFolder.waitFor({ state: 'visible', timeout: 10000 })
   await notebookFolder.dblclick({ timeout: 5000 })
-  await page.waitForTimeout(1000)
+  await page.waitForTimeout(1200)
 
-  // 7. 全ファイルを選択
-  await pickerFrame.locator('[data-id]').first().click({ timeout: 5000 })
+  // デバッグ用スクリーンショット（フォルダ内容確認）
+  await page.screenshot({ path: `${debugDir}/nblm-picker-folder.png`, fullPage: true }).catch(() => {})
+
+  // 7. 全ファイルを選択（最初の1件をクリックしてから Ctrl+A）
+  const firstItem = pickerFrame.locator('[aria-label*="選択されていません"], [role="option"], [role="gridcell"]').first()
+  await firstItem.waitFor({ state: 'visible', timeout: 10000 })
+  await firstItem.click({ timeout: 5000 })
   await page.keyboard.press('Control+A')
   await page.waitForTimeout(500)
 
   // 8. 「選択」ボタンをクリック
-  await pickerFrame.locator([
-    'button:has-text("選択")',
-    'button:has-text("Select")',
-    '[jsname="d1dBrd"]',
-  ].join(', ')).first().click({ timeout: 5000 })
+  const selectBtn = pickerFrame.getByRole('button', { name: '選択' })
+    .or(pickerFrame.getByRole('button', { name: 'Select' }))
+    .or(pickerFrame.locator('[jsname="d1dBrd"]'))
+  await selectBtn.first().click({ timeout: 5000 })
 
   // 9. ダイアログが閉じるのを待つ
   await page.waitForTimeout(2000)
