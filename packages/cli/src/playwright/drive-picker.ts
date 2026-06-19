@@ -53,19 +53,18 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
     )
   }
 
-  // 3. Click "Google Drive" option inside the dialog/panel
+  // 3. Click "Drive / ドライブ" button inside the dialog/panel
+  //    NotebookLM shows short labels: "ドライブ" (not "Google ドライブ")
   const driveOptionCandidates = [
+    'button:has-text("ドライブ")',          // Japanese short label
+    'button:has-text("Drive")',              // English short label
     'button:has-text("Google ドライブ")',
     'button:has-text("Googleドライブ")',
     'button:has-text("Google Drive")',
-    '[role="menuitem"]:has-text("Google ドライブ")',
-    '[role="menuitem"]:has-text("Googleドライブ")',
-    '[role="menuitem"]:has-text("Google Drive")',
-    '[role="option"]:has-text("Google ドライブ")',
-    '[role="option"]:has-text("Google Drive")',
-    'li:has-text("Google ドライブ")',
-    'li:has-text("Googleドライブ")',
-    'li:has-text("Google Drive")',
+    '[role="menuitem"]:has-text("ドライブ")',
+    '[role="menuitem"]:has-text("Drive")',
+    '[role="option"]:has-text("ドライブ")',
+    '[role="option"]:has-text("Drive")',
     '[data-source-type="DRIVE"]',
     '[aria-label*="ドライブ"]',
     '[aria-label*="Drive"]',
