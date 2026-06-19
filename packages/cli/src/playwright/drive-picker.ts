@@ -7,34 +7,53 @@ const PICKER_FRAME_SELECTORS = [
 ]
 
 export async function addSourcesFromDrive(page: Page, notebookId: string): Promise<void> {
-  // 1. Open "Add source" dialog
-  const addSourceCandidates = [
-    '[aria-label="ソースを追加"]',
-    '[aria-label="Add source"]',
-    'button:has-text("ソースを追加")',
-    'button:has-text("Add source")',
+  const debugDir = process.env.TMPDIR ?? '/tmp'
+  const { writeFileSync } = require('fs') as typeof import('fs')
+
+  // 1. Click "ソースを追加" — use force:true so invisible overlays don't block
+  await page.locator('[aria-label="ソースを追加"], [aria-label="Add source"]')
+    .first()
+    .click({ force: true, timeout: 15000 })
+
+  // 2. Wait for the source-type selection panel to appear.
+  //    NotebookLM renders this either as a CDK dialog or inline within source-picker.
+  //    We try every likely indicator and proceed as soon as one appears.
+  const DIALOG_SELECTORS = [
+    'mat-dialog-container',
+    '.mat-mdc-dialog-container',
+    '[role="dialog"]',
+    '[role="menu"]',
+    'mat-menu-content',
+    // inline expansion inside source-picker: look for any button mentioning Drive / Docs / PDF
+    'source-picker button:has-text("Drive")',
+    'source-picker button:has-text("ドライブ")',
+    'source-picker button:has-text("PDF")',
+    // generic: any element with "Google Drive" or "Google ドライブ" that wasn't there before
+    ':has-text("Google ドライブ"):not(body):not(html)',
+    ':has-text("Google Drive"):not(body):not(html)',
   ]
-  let addSourceClicked = false
-  for (const sel of addSourceCandidates) {
-    const el = page.locator(sel).first()
-    if (await el.count() > 0) {
-      await el.click({ timeout: 10000 })
-      addSourceClicked = true
-      break
-    }
-  }
-  if (!addSourceClicked) {
-    await page.screenshot({ path: '/tmp/nblm-drive-picker-debug.png', fullPage: true }).catch(() => {})
-    throw new Error('「ソースを追加」ボタンが見つかりません。Screenshot: /tmp/nblm-drive-picker-debug.png')
-  }
-  await page.waitForTimeout(2000)
 
-  // Save screenshot and HTML for debugging
-  await page.screenshot({ path: '/tmp/nblm-add-source-dialog.png', fullPage: true }).catch(() => {})
-  const bodyHtml = await page.evaluate(() => document.body.innerHTML).catch(() => '')
-  require('fs').writeFileSync('/tmp/nblm-add-source-dialog.html', bodyHtml)
+  let dialogFound = false
+  for (const sel of DIALOG_SELECTORS) {
+    const appeared = await page.waitForSelector(sel, { timeout: 3000 })
+      .then(() => true).catch(() => false)
+    if (appeared) { dialogFound = true; break }
+  }
 
-  // 2. Click "Google Drive" option — broad selectors to handle UI changes
+  // Capture state for debugging whether or not dialog was found
+  await page.screenshot({ path: `${debugDir}/nblm-add-source-dialog.png`, fullPage: true }).catch(() => {})
+  const html = await page.evaluate(() => document.documentElement.outerHTML).catch(() => '')
+  writeFileSync(`${debugDir}/nblm-add-source-dialog.html`, html)
+
+  if (!dialogFound) {
+    throw new Error(
+      '「ソースを追加」ダイアログが開きませんでした。\n' +
+      `  スクリーンショット: ${debugDir}/nblm-add-source-dialog.png\n` +
+      `  HTML ダンプ: ${debugDir}/nblm-add-source-dialog.html`
+    )
+  }
+
+  // 3. Click "Google Drive" option inside the dialog/panel
   const driveOptionCandidates = [
     'button:has-text("Google ドライブ")',
     'button:has-text("Googleドライブ")',
@@ -50,8 +69,6 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
     '[data-source-type="DRIVE"]',
     '[aria-label*="ドライブ"]',
     '[aria-label*="Drive"]',
-    'span:has-text("Google ドライブ")',
-    'div[role="button"]:has-text("ドライブ")',
   ]
   let driveClicked = false
   for (const sel of driveOptionCandidates) {
@@ -63,11 +80,11 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
     }
   }
   if (!driveClicked) {
-    await page.screenshot({ path: '/tmp/nblm-drive-picker-debug.png', fullPage: true }).catch(() => {})
+    await page.screenshot({ path: `${debugDir}/nblm-drive-picker-debug.png`, fullPage: true }).catch(() => {})
     throw new Error(
-      'Google Drive オプションが見つかりません。\n' +
-      '  スクリーンショット: /tmp/nblm-add-source-dialog.png\n' +
-      '  HTML ダンプ: /tmp/nblm-add-source-dialog.html'
+      'Google Drive オプションが見つかりません。ダイアログは開きましたが Drive ボタンのセレクタが外れています。\n' +
+      `  スクリーンショット: ${debugDir}/nblm-add-source-dialog.png\n` +
+      `  HTML ダンプ: ${debugDir}/nblm-add-source-dialog.html`
     )
   }
 
