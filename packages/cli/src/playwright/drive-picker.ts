@@ -8,15 +8,56 @@ const PICKER_FRAME_SELECTORS = [
 
 export async function addSourcesFromDrive(page: Page, notebookId: string): Promise<void> {
   // 1. Open "Add source" dialog
-  await page.locator('[aria-label="ソースを追加"]').click({ timeout: 10000 })
-  await page.waitForTimeout(500)
+  const addSourceCandidates = [
+    '[aria-label="ソースを追加"]',
+    '[aria-label="Add source"]',
+    'button:has-text("ソースを追加")',
+    'button:has-text("Add source")',
+  ]
+  let addSourceClicked = false
+  for (const sel of addSourceCandidates) {
+    const el = page.locator(sel).first()
+    if (await el.count() > 0) {
+      await el.click({ timeout: 10000 })
+      addSourceClicked = true
+      break
+    }
+  }
+  if (!addSourceClicked) {
+    await page.screenshot({ path: '/tmp/nblm-drive-picker-debug.png', fullPage: true }).catch(() => {})
+    throw new Error('「ソースを追加」ボタンが見つかりません。Screenshot: /tmp/nblm-drive-picker-debug.png')
+  }
+  await page.waitForTimeout(1500)
+
+  // Save screenshot for debugging if step 2 fails
+  await page.screenshot({ path: '/tmp/nblm-add-source-dialog.png', fullPage: true }).catch(() => {})
 
   // 2. Click "Google Drive" option
-  await page.locator([
+  const driveOptionCandidates = [
     'button:has-text("Google ドライブ")',
     'button:has-text("Google Drive")',
+    '[role="menuitem"]:has-text("Google ドライブ")',
+    '[role="menuitem"]:has-text("Google Drive")',
+    '[role="option"]:has-text("Google ドライブ")',
+    '[role="option"]:has-text("Google Drive")',
+    'li:has-text("Google ドライブ")',
+    'li:has-text("Google Drive")',
     '[data-source-type="DRIVE"]',
-  ].join(', ')).first().click({ timeout: 5000 })
+    ':has-text("Google ドライブ"):not(html):not(body):not(div > div > div)',
+  ]
+  let driveClicked = false
+  for (const sel of driveOptionCandidates) {
+    const el = page.locator(sel).first()
+    if (await el.count() > 0) {
+      await el.click({ timeout: 5000 })
+      driveClicked = true
+      break
+    }
+  }
+  if (!driveClicked) {
+    await page.screenshot({ path: '/tmp/nblm-drive-picker-debug.png', fullPage: true }).catch(() => {})
+    throw new Error('Google Drive オプションが見つかりません。/tmp/nblm-add-source-dialog.png を確認してください。')
+  }
 
   // 3. Wait for Drive picker iframe
   let pickerFrame = null
