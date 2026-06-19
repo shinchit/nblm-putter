@@ -15,7 +15,8 @@ export function registerSyncCommand(program: Command): void {
     .command('sync <folder>')
     .description('Sync files from a folder to NotebookLM via Google Drive')
     .requiredOption('--notebook <id>', 'Target notebook ID (from `notebooks list`)')
-    .action(async (folder: string, opts: { notebook: string }) => {
+    .option('--force-overwrite', 'Overwrite existing files in Drive instead of skipping them')
+    .action(async (folder: string, opts: { notebook: string; forceOverwrite?: boolean }) => {
       const absFolder = resolve(folder)
       const ignorePatterns = await loadIgnorePatterns()
       const files = filterFiles(walkDir(absFolder), absFolder, ignorePatterns)
@@ -54,7 +55,7 @@ export function registerSyncCommand(program: Command): void {
         const name = basename(file)
         process.stderr.write(`\r\x1b[2K  → ${name}`)
         try {
-          const result = await uploadFile(file, notebookFolderId)
+          const result = await uploadFile(file, notebookFolderId, opts.forceOverwrite)
           if (result.status === 'skipped') {
             skipped++
             process.stdout.write(`  SKIP  ${name}\n`)
