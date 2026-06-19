@@ -27,23 +27,31 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
     await page.screenshot({ path: '/tmp/nblm-drive-picker-debug.png', fullPage: true }).catch(() => {})
     throw new Error('「ソースを追加」ボタンが見つかりません。Screenshot: /tmp/nblm-drive-picker-debug.png')
   }
-  await page.waitForTimeout(1500)
+  await page.waitForTimeout(2000)
 
-  // Save screenshot for debugging if step 2 fails
+  // Save screenshot and HTML for debugging
   await page.screenshot({ path: '/tmp/nblm-add-source-dialog.png', fullPage: true }).catch(() => {})
+  const bodyHtml = await page.evaluate(() => document.body.innerHTML).catch(() => '')
+  require('fs').writeFileSync('/tmp/nblm-add-source-dialog.html', bodyHtml)
 
-  // 2. Click "Google Drive" option
+  // 2. Click "Google Drive" option — broad selectors to handle UI changes
   const driveOptionCandidates = [
     'button:has-text("Google ドライブ")',
+    'button:has-text("Googleドライブ")',
     'button:has-text("Google Drive")',
     '[role="menuitem"]:has-text("Google ドライブ")',
+    '[role="menuitem"]:has-text("Googleドライブ")',
     '[role="menuitem"]:has-text("Google Drive")',
     '[role="option"]:has-text("Google ドライブ")',
     '[role="option"]:has-text("Google Drive")',
     'li:has-text("Google ドライブ")',
+    'li:has-text("Googleドライブ")',
     'li:has-text("Google Drive")',
     '[data-source-type="DRIVE"]',
-    ':has-text("Google ドライブ"):not(html):not(body):not(div > div > div)',
+    '[aria-label*="ドライブ"]',
+    '[aria-label*="Drive"]',
+    'span:has-text("Google ドライブ")',
+    'div[role="button"]:has-text("ドライブ")',
   ]
   let driveClicked = false
   for (const sel of driveOptionCandidates) {
@@ -56,7 +64,11 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
   }
   if (!driveClicked) {
     await page.screenshot({ path: '/tmp/nblm-drive-picker-debug.png', fullPage: true }).catch(() => {})
-    throw new Error('Google Drive オプションが見つかりません。/tmp/nblm-add-source-dialog.png を確認してください。')
+    throw new Error(
+      'Google Drive オプションが見つかりません。\n' +
+      '  スクリーンショット: /tmp/nblm-add-source-dialog.png\n' +
+      '  HTML ダンプ: /tmp/nblm-add-source-dialog.html'
+    )
   }
 
   // 3. Wait for Drive picker iframe
