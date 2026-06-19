@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getNotebooks, startSync, getJob, pickFolder, cancelJob, createNotebook } from '../api/client'
+import { getNotebooks, startDriveSync, getJob, pickFolder, cancelJob, createNotebook } from '../api/client'
 import { ProgressBar } from '../components/ProgressBar'
 
 interface JobLog {
@@ -80,7 +80,7 @@ export function Sync() {
     setJobId(null)
     setCancelling(false)
     try {
-      const { jobId: id } = await startSync(folder, notebookId, 1)
+      const { jobId: id } = await startDriveSync(folder, notebookId)
       setJobId(id)
       pollRef.current = setInterval(async () => {
         try {
@@ -173,7 +173,7 @@ export function Sync() {
             onClick={handleSync}
             disabled={loading || !notebookId || !folder}
           >
-            {loading ? 'Syncing...' : 'Sync'}
+            {loading ? 'Syncing...' : 'Sync via Drive'}
           </button>
           {loading && (
             <button
@@ -195,7 +195,9 @@ export function Sync() {
                   {job.status === 'failed' && '✗ 失敗'}
                   {job.status === 'cancelled' && '⏹ 中止'}
                   {job.status === 'running' && job.currentFile
-                    ? <>処理中: <span className="font-mono">{job.currentFile}</span></>
+                    ? job.currentFile.startsWith('[Drive]')
+                      ? <><span className="text-blue-500">⬆</span> {job.currentFile.replace('[Drive] ', '')}</>
+                      : <>{job.currentFile}</>
                     : job.status === 'running' ? 'ブラウザを起動中...' : null}
                 </span>
                 <span>{job.doneFiles} / {job.totalFiles} ({pct}%)</span>
