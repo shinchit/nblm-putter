@@ -75,10 +75,12 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
 
   // 3. Drive ピッカー iframe を待つ
   let pickerFrame = null
+  let pickerFrameSel = ''
   for (const sel of PICKER_FRAME_SELECTORS) {
     try {
       await page.waitForSelector(sel, { timeout: 12000 })
       pickerFrame = page.frameLocator(sel)
+      pickerFrameSel = sel
       break
     } catch { /* 次を試す */ }
   }
@@ -87,21 +89,61 @@ export async function addSourcesFromDrive(page: Page, notebookId: string): Promi
     throw new Error(`Drive ピッカー iframe が表示されませんでした。スクリーンショット: ${debugDir}/nblm-drive-picker-debug.png`)
   }
 
-  // 4. マイドライブへ移動
-  await pickerFrame.locator([
+  // ピッカーが読み込まれるまで少し待ってからデバッグ情報を保存
+  await page.waitForTimeout(2000)
+  await page.screenshot({ path: `${debugDir}/nblm-picker-opened.png`, fullPage: true }).catch(() => {})
+  const pickerHtml = await page.frames()
+    .find(f => f.url().includes('docs.google.com') || f.url().includes('drive.google.com'))
+    ?.evaluate(() => document.documentElement.outerHTML)
+    .catch(() => '') ?? ''
+  fs.writeFileSync(`${debugDir}/nblm-picker-frame.html`, pickerHtml)
+
+  // 4. マイドライブへ移動（ピッカーが別ビューを開いている場合）
+  const myDriveCandidates = [
     'text=マイドライブ',
     'text=My Drive',
     '[data-view="2"]',
-  ].join(', ')).first().click({ timeout: 10000 })
-  await page.waitForTimeout(1000)
+    '[aria-label="マイドライブ"]',
+    '[aria-label="My Drive"]',
+    '[data-id="my_drive_item"]',
+    '.a-d-Dc:has-text("マイドライブ")',
+    '.a-d-Dc:has-text("My Drive")',
+    '[role="treeitem"]:has-text("マイドライブ")',
+    '[role="treeitem"]:has-text("My Drive")',
+    '[role="listitem"]:has-text("マイドライブ")',
+    '[role="listitem"]:has-text("My Drive")',
+  ]
+  for (const sel of myDriveCandidates) {
+    const el = pickerFrame.locator(sel).first()
+    const visible = await el.isVisible({ timeout: 1000 }).catch(() => false)
+    if (visible) {
+      await el.click({ timeout: 5000 })
+      await page.waitForTimeout(1000)
+      break
+    }
+  }
 
   // 5. nblm-putter フォルダを開く
-  await pickerFrame.locator(`[data-tooltip="nblm-putter"], text=nblm-putter`).first().dblclick({ timeout: 10000 })
-  await page.waitForTimeout(800)
+  const nblmFolder = pickerFrame.locator([
+    `[data-tooltip="nblm-putter"]`,
+    `[aria-label="nblm-putter"]`,
+    `text=nblm-putter`,
+    `[title="nblm-putter"]`,
+  ].join(', ')).first()
+  await nblmFolder.waitFor({ state: 'visible', timeout: 10000 })
+  await nblmFolder.dblclick({ timeout: 5000 })
+  await page.waitForTimeout(1000)
 
   // 6. ノートブックサブフォルダを開く
-  await pickerFrame.locator(`[data-tooltip="${notebookId}"], text=${notebookId}`).first().dblclick({ timeout: 10000 })
-  await page.waitForTimeout(800)
+  const notebookFolder = pickerFrame.locator([
+    `[data-tooltip="${notebookId}"]`,
+    `[aria-label="${notebookId}"]`,
+    `text=${notebookId}`,
+    `[title="${notebookId}"]`,
+  ].join(', ')).first()
+  await notebookFolder.waitFor({ state: 'visible', timeout: 10000 })
+  await notebookFolder.dblclick({ timeout: 5000 })
+  await page.waitForTimeout(1000)
 
   // 7. 全ファイルを選択
   await pickerFrame.locator('[data-id]').first().click({ timeout: 5000 })
